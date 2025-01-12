@@ -68,35 +68,37 @@ export default function DealsScreen() {
     // Filter by date
     if (filters.date && filters.date !== 'All Time') {
       const today = new Date();
+      const todayStart = new Date(today.setHours(0, 0, 0, 0));
+      const todayEnd = new Date(today.setHours(23, 59, 59, 999));
       
       switch (filters.date) {
         case 'Today':
           filtered = filtered.filter(deal => {
-            const dealDate = new Date(deal.createdAt);
-            return dealDate.toDateString() === today.toDateString();
+            const dealDate = new Date(deal.createdAt.toDate());
+            return dealDate >= todayStart && dealDate <= todayEnd;
           });
           break;
         case 'This Week':
-          const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+          const weekStart = new Date(todayStart);
+          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
           filtered = filtered.filter(deal => {
-            const dealDate = new Date(deal.createdAt);
-            return dealDate >= weekAgo;
+            const dealDate = new Date(deal.createdAt.toDate());
+            return dealDate >= weekStart;
           });
           break;
         case 'This Month':
+          const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
           filtered = filtered.filter(deal => {
-            const dealDate = new Date(deal.createdAt);
-            return dealDate.getMonth() === today.getMonth() &&
-                   dealDate.getFullYear() === today.getFullYear();
+            const dealDate = new Date(deal.createdAt.toDate());
+            return dealDate >= monthStart;
           });
           break;
         case 'Last Month':
+          const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+          const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
           filtered = filtered.filter(deal => {
-            const dealDate = new Date(deal.createdAt);
-            const lastMonth = today.getMonth() - 1;
-            const year = lastMonth < 0 ? today.getFullYear() - 1 : today.getFullYear();
-            const month = lastMonth < 0 ? 11 : lastMonth;
-            return dealDate.getMonth() === month && dealDate.getFullYear() === year;
+            const dealDate = new Date(deal.createdAt.toDate());
+            return dealDate >= lastMonthStart && dealDate <= lastMonthEnd;
           });
           break;
       }

@@ -1,5 +1,8 @@
 {
   "expo": {
+    "extra": {
+      "enableDebugLogging": true
+    },
     "name": "--dealers",
     "slug": "--dealers",
     "version": "1.0.0",

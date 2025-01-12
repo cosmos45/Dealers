@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
-import { Appbar, TextInput, Button, Surface, Text, Menu, Provider } from 'react-native-paper';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, Image } from 'react-native';
+import { Appbar, TextInput, Button, Surface, Text, Menu, Provider, Switch, IconButton } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { inventoryService } from '../../services/inventoryService';
+import { auth } from '../../firebaseConfig';
 
 const CONDITIONS = [
   { label: "Brand New (Sealed)", value: "brand_new" },
@@ -22,39 +23,112 @@ export default function AddEditPhoneScreen() {
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [condition, setCondition] = useState('');
-  const [price, setPrice] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [imei, setImei] = useState('');
+  const [storageGB, setStorageGB] = useState('');
+  const [ramGB, setRamGB] = useState('');
+  const [basePrice, setBasePrice] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [isIphone, setIsIphone] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
-  const [selectedMedia, setSelectedMedia] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [images, setImages] = useState([]);
 
-  const pickMedia = async (type) => {
+  useEffect(() => {
+    if (isIphone) {
+      setBrand('iPhone');
+    }
+  }, [isIphone]);
+
+  useEffect(() => {
+    if (isEdit && phoneData) {
+      try {
+        const phone = JSON.parse(phoneData);
+        setBrand(phone.brand || '');
+        setModel(phone.model || '');
+        setCondition(phone.condition || '');
+        setStorageGB(phone.storageGB?.toString() || '');
+        setRamGB(phone.ramGB?.toString() || '');
+        setBasePrice(phone.basePrice?.toString() || '');
+        setQuantity(phone.quantity?.toString() || '1');
+        setIsIphone(phone.isIphone || false);
+        // Properly handle images array
+        if (Array.isArray(phone.images)) {
+          console.log('Loading existing images:', phone.images);
+          setImages(phone.images);
+        }
+      } catch (error) {
+        console.error('Error parsing phone data:', error);
+      }
+    }
+  }, [isEdit, phoneData]);
+
+  const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: type === 'image' ? 
-          ImagePicker.MediaTypeOptions.Images : 
-          ImagePicker.MediaTypeOptions.Videos,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: type === 'image' ? [4, 3] : [16, 9],
-        quality: 1,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: false,
       });
 
       if (!result.canceled && result.assets) {
-        setSelectedMedia([...selectedMedia, { ...result.assets[0], type }]);
+        const newImageUri = result.assets[0].uri;
+        console.log('New image URI:', newImageUri);
+        setImages(currentImages => [...currentImages, newImageUri]);
       }
     } catch (error) {
-      alert('Error picking media: ' + error.message);
+      console.error('Error picking image:', error);
+      alert('Error selecting image. Please try again.');
     }
   };
 
-  const handleSave = () => {
-    if (!brand || !model || !condition || !price || !quantity) {
+  const removeImage = (index) => {
+    setImages(currentImages => currentImages.filter((_, i) => i !== index));
+  };
+
+  const handleSave = async () => {
+    if (!brand || !model || !condition || !basePrice || !quantity || !storageGB) {
       alert('Please fill in all required fields');
       return;
     }
-    // Add save logic here
-    router.back();
+
+    try {
+      setLoading(true);
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('No authenticated user found');
+
+      const deviceData = {
+        brand,
+        model,
+        storageGB: parseInt(storageGB),
+        ramGB: isIphone ? null : parseInt(ramGB),
+        condition,
+        quantity: parseInt(quantity),
+        basePrice: parseFloat(basePrice),
+        isIphone,
+        images, // Make sure images array is included
+        dealerId: currentUser.uid,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      if (isEdit) {
+        const phoneId = JSON.parse(phoneData).id;
+        await inventoryService.updateDevice(phoneId, deviceData);
+      } else {
+        await inventoryService.addDevice(deviceData);
+      }
+
+      router.back();
+    } catch (error) {
+      console.error('Error saving device:', error);
+      alert('Error saving device. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Rest of your component remains the same, including the return statement and styles
 
   return (
     <Provider>
@@ -62,18 +136,30 @@ export default function AddEditPhoneScreen() {
         <Appbar.Header style={styles.header}>
           <Appbar.BackAction onPress={() => router.back()} color="#007BFF" />
           <Appbar.Content 
-            title={isEdit ? "Edit Phone" : "Add New Phone"} 
+            title={isEdit ? "Edit Device" : "Add New Device"} 
             titleStyle={styles.headerTitle}
           />
         </Appbar.Header>
 
         <ScrollView style={styles.content}>
+          <View style={styles.switchContainer}>
+            <Text style={styles.switchLabel}>iPhone Device</Text>
+            <Switch
+              value={isIphone}
+              onValueChange={setIsIphone}
+              color="#007BFF"
+            />
+          </View>
+
           <TextInput
             label="Brand *"
             value={brand}
             onChangeText={setBrand}
             mode="outlined"
             style={styles.input}
+            disabled={isIphone}
+            outlineColor="#E0E0E0"
+            activeOutlineColor="#007BFF"
           />
 
           <TextInput
@@ -82,6 +168,8 @@ export default function AddEditPhoneScreen() {
             onChangeText={setModel}
             mode="outlined"
             style={styles.input}
+            outlineColor="#E0E0E0"
+            activeOutlineColor="#007BFF"
           />
 
           <Menu
@@ -95,12 +183,14 @@ export default function AddEditPhoneScreen() {
                 style={styles.input}
                 right={<TextInput.Icon icon="menu-down" />}
                 onTouchStart={() => setMenuVisible(true)}
+                outlineColor="#E0E0E0"
+                activeOutlineColor="#007BFF"
               />
             }
           >
-            {CONDITIONS.map((item, index) => (
+            {CONDITIONS.map((item) => (
               <Menu.Item
-                key={index}
+                key={item.value}
                 onPress={() => {
                   setCondition(item.label);
                   setMenuVisible(false);
@@ -111,13 +201,39 @@ export default function AddEditPhoneScreen() {
           </Menu>
 
           <TextInput
-            label="Price *"
-            value={price}
-            onChangeText={setPrice}
+            label="Storage (GB) *"
+            value={storageGB}
+            onChangeText={setStorageGB}
+            mode="outlined"
+            keyboardType="numeric"
+            style={styles.input}
+            outlineColor="#E0E0E0"
+            activeOutlineColor="#007BFF"
+          />
+
+          {!isIphone && (
+            <TextInput
+              label="RAM (GB) *"
+              value={ramGB}
+              onChangeText={setRamGB}
+              mode="outlined"
+              keyboardType="numeric"
+              style={styles.input}
+              outlineColor="#E0E0E0"
+              activeOutlineColor="#007BFF"
+            />
+          )}
+
+          <TextInput
+            label="Base Price *"
+            value={basePrice}
+            onChangeText={setBasePrice}
             mode="outlined"
             keyboardType="numeric"
             style={styles.input}
             left={<TextInput.Affix text="$" />}
+            outlineColor="#E0E0E0"
+            activeOutlineColor="#007BFF"
           />
 
           <TextInput
@@ -127,37 +243,31 @@ export default function AddEditPhoneScreen() {
             mode="outlined"
             keyboardType="numeric"
             style={styles.input}
+            outlineColor="#E0E0E0"
+            activeOutlineColor="#007BFF"
           />
 
-          <TextInput
-            label="IMEI Number (Optional)"
-            value={imei}
-            onChangeText={setImei}
-            mode="outlined"
-            style={styles.input}
-          />
-
-          <Text style={styles.uploadTitle}>Upload Media</Text>
-
-          <View style={styles.mediaButtons}>
-            <Button
-              mode="outlined"
-              icon="camera"
-              onPress={() => pickMedia('image')}
-              style={styles.mediaButton}
-              labelStyle={{ color: '#007BFF' }}
-            >
-              Images
-            </Button>
-            <Button
-              mode="outlined"
-              icon="video"
-              onPress={() => pickMedia('video')}
-              style={styles.mediaButton}
-              labelStyle={{ color: '#007BFF' }}
-            >
-              Videos
-            </Button>
+          <View style={styles.imageSection}>
+            <Text style={styles.sectionTitle}>Device Images</Text>
+            <View style={styles.imageGrid}>
+              {images.map((uri, index) => (
+                <View key={index} style={styles.imageContainer}>
+                  <Image source={{ uri }} style={styles.imagePreview} />
+                  <IconButton
+                    icon="close"
+                    size={20}
+                    onPress={() => removeImage(index)}
+                    style={styles.removeImageButton}
+                  />
+                </View>
+              ))}
+              <IconButton
+                icon="camera"
+                size={24}
+                onPress={pickImage}
+                style={styles.addImageButton}
+              />
+            </View>
           </View>
 
           <View style={styles.buttonContainer}>
@@ -165,7 +275,9 @@ export default function AddEditPhoneScreen() {
               mode="contained"
               onPress={handleSave}
               style={styles.saveButton}
-              labelStyle={{ color: '#FFFFFF' }}
+              labelStyle={styles.buttonLabel}
+              loading={loading}
+              disabled={loading}
             >
               Save
             </Button>
@@ -173,7 +285,8 @@ export default function AddEditPhoneScreen() {
               mode="outlined"
               onPress={() => router.back()}
               style={styles.cancelButton}
-              labelStyle={{ color: '#007BFF' }}
+              labelStyle={styles.cancelButtonLabel}
+              disabled={loading}
             >
               Cancel
             </Button>
@@ -191,37 +304,74 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#FFFFFF',
-    elevation: 0,
+    elevation: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
   headerTitle: {
-    color: '#000000',
     fontSize: 20,
     fontWeight: 'bold',
+    color: '#000000',
   },
   content: {
     padding: 16,
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 8,
+  },
+  switchLabel: {
+    fontSize: 16,
+    color: '#000000',
+    fontWeight: '500',
   },
   input: {
     marginBottom: 16,
     backgroundColor: '#FFFFFF',
   },
-  uploadTitle: {
+  imageSection: {
+    marginVertical: 16,
+  },
+  sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 16,
+    marginBottom: 12,
     color: '#000000',
   },
-  mediaButtons: {
+  imageGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 16,
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  mediaButton: {
-    flex: 1,
-    borderColor: '#007BFF',
+  imageContainer: {
+    position: 'relative',
+  },
+  imagePreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    elevation: 2,
+  },
+  addImageButton: {
+    width: 100,
+    height: 100,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -237,5 +387,11 @@ const styles = StyleSheet.create({
   cancelButton: {
     flex: 1,
     borderColor: '#007BFF',
+  },
+  buttonLabel: {
+    color: '#FFFFFF',
+  },
+  cancelButtonLabel: {
+    color: '#007BFF',
   }
 });
