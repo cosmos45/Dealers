@@ -1,45 +1,66 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
-import { Appbar, Surface, Provider } from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet } from 'react-native';
+import { Appbar, Surface, Text, ActivityIndicator } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { dealService } from '../../../services/dealService';
 
 export default function DealDetailsScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>(); // Correct TypeScript syntax
+  const [deal, setDeal] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDeal = async () => {
+      try {
+        setLoading(true);
+        const fetchedDeals = await dealService.getDealerDeals(); // Fetch all deals
+        const selectedDeal = fetchedDeals.find((d) => d.id === id); // Find by ID
+        setDeal(selectedDeal);
+      } catch (error) {
+        console.error('Error fetching deal:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) fetchDeal();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#007BFF" />
+      </View>
+    );
+  }
+
+  if (!deal) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text>Failed to load deal details.</Text>
+      </View>
+    );
+  }
 
   return (
-    <Provider>
-      <Surface style={styles.container}>
-        <Appbar.Header style={styles.header}>
-          <Appbar.BackAction onPress={() => router.back()} color="#007BFF" />
-          <Appbar.Content title="Deal Details" titleStyle={styles.headerTitle} />
-        </Appbar.Header>
+    <Surface style={styles.container}>
+      <Appbar.Header>
+        <Appbar.BackAction onPress={() => router.back()} />
+        <Appbar.Content title="Deal Details" />
+      </Appbar.Header>
 
-        <ScrollView style={styles.content}>
-          {/* Add your deal details components here */}
-        </ScrollView>
-      </Surface>
-    </Provider>
+      <View style={styles.content}>
+        <Text>Customer Name: {deal.customerName}</Text>
+        <Text>Contact Number: {deal.contact}</Text>
+        <Text>Total Amount: ${deal.totalAmount.toFixed(2)}</Text>
+        <Text>Status: {deal.status}</Text>
+      </View>
+    </Surface>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    backgroundColor: '#FFFFFF',
-    elevation: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  headerTitle: {
-    color: '#000000',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  content: {
-    padding: 16,
-  }
+  container: { flex: 1 },
+  content: { padding: 16 },
 });

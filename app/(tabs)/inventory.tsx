@@ -44,17 +44,26 @@ export default function InventoryScreen() {
     return () => unsubscribe();
   }, []);
 
-  const handleSearch = (query) => {
+  const handleSearch = async (query) => {
     setSearchQuery(query);
-    const filtered = inventory.filter(
-      (item) =>
-        item.model.toLowerCase().includes(query.toLowerCase()) ||
-        item.brand.toLowerCase().includes(query.toLowerCase()) ||
-        item.storageGB.toString().includes(query) ||
-        (item.ramGB && item.ramGB.toString().includes(query))
-    );
-    setFilteredInventory(filtered);
+    setLoading(true); // Show loading indicator during search
+  
+    try {
+      if (query.length >= 2) {
+        console.log('Searching inventory for:', query);
+        const results = await inventoryService.searchInventoryPhones(query);
+        console.log('Search results:', results);
+        setFilteredInventory(results);
+      } else {
+        setFilteredInventory(inventory); // Reset to full inventory if query is too short
+      }
+    } catch (error) {
+      console.error('Error during search:', error);
+    } finally {
+      setLoading(false); // Hide loading indicator after search completes
+    }
   };
+  
 
   const handleDelete = async (deviceId) => {
     Alert.alert('Delete Device', 'Are you sure you want to delete this device?', [
@@ -133,9 +142,9 @@ export default function InventoryScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await inventoryService.refreshInventory();
-      setLoading(true);
-      setFilteredInventory(inventory);
+      const refreshedInventory = await inventoryService.refreshInventory();
+      setInventory(refreshedInventory);
+      setFilteredInventory(refreshedInventory);
     } catch (error) {
       console.error('Error refreshing inventory:', error);
     } finally {
@@ -210,6 +219,8 @@ export default function InventoryScreen() {
           >
             {[
               { label: 'All Storage', value: 0 },
+              { label: '32GB', value: 32 },
+              { label: '64GB', value: 64 },
               { label: '128GB', value: 128 },
               { label: '256GB', value: 256 },
               { label: '512GB', value: 512 },
