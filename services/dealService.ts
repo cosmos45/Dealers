@@ -1,4 +1,4 @@
-import { collection, addDoc, query, getDocs, where, orderBy, doc, updateDoc, deleteDoc, limit, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, query, getDocs, where, orderBy, doc, updateDoc, deleteDoc, limit, writeBatch, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import { inventoryService } from './inventoryService';
 
@@ -98,12 +98,31 @@ export const dealService = {
     }
   },
 
-
-
+  async getPhoneConditions(dealId: string) {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('No authenticated user found');
   
-  
-  
-  
+      const soldPhonesRef = collection(db, 'soldPhones');
+      const q = query(
+        soldPhonesRef, 
+        where('dealId', '==', dealId),
+        where('dealerId', '==', currentUser.uid)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const conditions: { [key: string]: string } = {};
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        conditions[data.model] = data.condition;
+      });
+      
+      return conditions;
+    } catch (error) {
+      console.error('Error getting phone conditions:', error);
+      throw error;
+    }
+  },
 
   async getDealerDeals() {
     try {
@@ -126,29 +145,29 @@ export const dealService = {
       throw error;
     }
   },
+
   // Add this method to dealService
-async getDealById(dealId: string): Promise<Deal | null> {
-  try {
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error('No authenticated user found');
+  async getDealById(dealId: string): Promise<Deal | null> {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('No authenticated user found');
 
-    const dealRef = doc(db, 'deals', dealId);
-    const dealDoc = await getDoc(dealRef);
+      const dealRef = doc(db, 'deals', dealId);
+      const dealDoc = await getDoc(dealRef);
 
-    if (!dealDoc.exists()) {
-      return null;
+      if (!dealDoc.exists()) {
+        return null;
+      }
+
+      return {
+        id: dealDoc.id,
+        ...dealDoc.data()
+      } as Deal;
+    } catch (error) {
+      console.error('Error getting deal by ID:', error);
+      throw error;
     }
-
-    return {
-      id: dealDoc.id,
-      ...dealDoc.data()
-    } as Deal;
-  } catch (error) {
-    console.error('Error getting deal by ID:', error);
-    throw error;
-  }
-},
-
+  },
 
   async getRecentSales(model: string): Promise<SaleHistory[]> {
     try {

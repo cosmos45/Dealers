@@ -155,10 +155,16 @@ export default function InventoryScreen() {
   return (
     <Provider>
       <Surface style={styles.container}>
-        <Appbar.Header style={styles.header}>
-          <Appbar.Content title="Inventory" titleStyle={styles.headerTitle} />
-          <Appbar.Action icon="refresh" onPress={onRefresh} color="#007BFF" />
-        </Appbar.Header>
+      <Appbar.Header style={styles.header}>
+  <Appbar.Content title="Inventory" titleStyle={styles.headerTitle} />
+  <Appbar.Action 
+    icon="history" 
+    onPress={() => router.push('/screens/soldPhones')} 
+    color="#007BFF" 
+  />
+  <Appbar.Action icon="refresh" onPress={onRefresh} color="#007BFF" />
+</Appbar.Header>
+
 
         <View style={styles.searchContainer}>
           <TextInput

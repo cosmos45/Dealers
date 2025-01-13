@@ -17,7 +17,63 @@ export interface InventoryItem {
   updatedAt: Date;
 }
 
+export interface SoldPhone {
+  id: string;
+  model: string;
+  brand: string;
+  condition: string;
+  price: number;
+  dealerId: string;
+  dealerName: string;
+  dealType: string;
+  soldAt: string;
+}
+
 export const inventoryService = {
+  async getSoldDevicesWithDetails(): Promise<SoldPhone[]> {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('No authenticated user found');
+
+      // Using existing index: dealerId Ascending soldAt Descending __name__ Descending
+      const q = query(
+        collection(db, 'soldPhones'),
+        where('dealerId', '==', currentUser.uid),
+        orderBy('soldAt', 'desc'),
+        orderBy('__name__', 'desc')
+      );
+
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as SoldPhone[];
+    } catch (error) {
+      console.error('Error getting sold devices:', error);
+      throw error;
+    }
+  },
+
+  async searchSoldDevices(searchQuery: string): Promise<SoldPhone[]> {
+    try {
+      // Get all devices first using the existing index
+      const devices = await this.getSoldDevicesWithDetails();
+      
+      // Filter in memory since we can't use compound queries with the current indexes
+      if (!searchQuery.trim()) return devices;
+      
+      const searchLower = searchQuery.toLowerCase();
+      return devices.filter(device => 
+        device.model.toLowerCase().includes(searchLower) ||
+        device.brand.toLowerCase().includes(searchLower) ||
+        device.dealerName.toLowerCase().includes(searchLower)
+      );
+    } catch (error) {
+      console.error('Error searching sold devices:', error);
+      throw error;
+    }
+  },
+
   async addDevice(deviceData: Omit<InventoryItem, 'id' | 'dealerId' | 'createdAt' | 'updatedAt' | 'status'>) {
     try {
       const currentUser = auth.currentUser;

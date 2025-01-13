@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { Stack } from 'expo-router';
 import { Appbar, Surface, Text, ActivityIndicator } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { dealService } from '../../../services/dealService';
+import DealDetailsScreen from '../../screens/DealDetailsScreen';
 
-export default function DealDetailsScreen() {
+interface RouteParams {
+  id: string;
+}
+
+export default function DealDetailsRoute() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>(); // Correct TypeScript syntax
+  const { id } = useLocalSearchParams<RouteParams>();
   const [deal, setDeal] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -14,9 +20,9 @@ export default function DealDetailsScreen() {
     const fetchDeal = async () => {
       try {
         setLoading(true);
-        const fetchedDeals = await dealService.getDealerDeals(); // Fetch all deals
-        const selectedDeal = fetchedDeals.find((d) => d.id === id); // Find by ID
-        setDeal(selectedDeal);
+        if (!id) return;
+        const dealData = await dealService.getDealById(id);
+        setDeal(dealData);
       } catch (error) {
         console.error('Error fetching deal:', error);
       } finally {
@@ -24,43 +30,72 @@ export default function DealDetailsScreen() {
       }
     };
 
-    if (id) fetchDeal();
+    fetchDeal();
   }, [id]);
 
   if (loading) {
     return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007BFF" />
-      </View>
+      <>
+        <Stack.Screen 
+          options={{
+            headerShown: false,
+            presentation: 'card',
+            animation: 'slide_from_right',
+          }} 
+        />
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#007BFF" />
+        </View>
+      </>
     );
   }
 
   if (!deal) {
     return (
-      <View style={styles.errorContainer}>
-        <Text>Failed to load deal details.</Text>
-      </View>
+      <>
+        <Stack.Screen 
+          options={{
+            headerShown: false,
+            presentation: 'card',
+            animation: 'slide_from_right',
+          }} 
+        />
+        <View style={styles.errorContainer}>
+          <Text>Failed to load deal details.</Text>
+        </View>
+      </>
     );
   }
 
   return (
-    <Surface style={styles.container}>
-      <Appbar.Header>
-        <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Deal Details" />
-      </Appbar.Header>
-
-      <View style={styles.content}>
-        <Text>Customer Name: {deal.customerName}</Text>
-        <Text>Contact Number: {deal.contact}</Text>
-        <Text>Total Amount: ${deal.totalAmount.toFixed(2)}</Text>
-        <Text>Status: {deal.status}</Text>
-      </View>
-    </Surface>
+    <>
+      <Stack.Screen 
+        options={{
+          headerShown: false,
+          presentation: 'card',
+          animation: 'slide_from_right',
+        }} 
+      />
+      <DealDetailsScreen id={id} />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { padding: 16 },
+  container: { 
+    flex: 1 
+  },
+  content: { 
+    padding: 16 
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  }
 });

@@ -44,13 +44,10 @@ export default function DealsList({ deals }) {
         {/* Table Rows */}
         {paginatedDeals.map((deal, index) => (
           <DataTable.Row
-            key={deal.id}
-            onPress={() => router.push(`/(tabs)/deals/${deal.id}`)}
-            style={[
-              styles.tableRow,
-              index % 2 === 0 ? styles.rowEven : styles.rowOdd, // Zebra striping
-            ]}
-          >
+          key={deal.id}
+          onPress={() => router.push(`/(tabs)/deals/${deal.id}`)}
+          style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}
+        >
             <DataTable.Cell style={styles.dateColumn}>
               <Text style={styles.cellText}>
                 {new Date(deal.date).toLocaleDateString()}

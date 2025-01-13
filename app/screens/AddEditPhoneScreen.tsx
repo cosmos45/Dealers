@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Image } from 'react-native';
 import { Appbar, TextInput, Button, Surface, Text, Menu, Provider, Switch, IconButton } from 'react-native-paper';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { inventoryService } from '../../services/inventoryService';
 import { auth } from '../../firebaseConfig';
+import * as ImagePicker from 'expo-image-picker';
+import * as VideoThumbnails from 'expo-video-thumbnails';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 const CONDITIONS = [
   { label: "Brand New (Sealed)", value: "brand_new" },
@@ -30,7 +32,9 @@ export default function AddEditPhoneScreen() {
   const [isIphone, setIsIphone] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [images, setImages] = useState([]);
+  const [images, setImages] = useState<string[]>([]);
+  const [video, setVideo] = useState<string | null>(null);
+  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
 
   useEffect(() => {
     if (isIphone) {
@@ -50,40 +54,98 @@ export default function AddEditPhoneScreen() {
         setBasePrice(phone.basePrice?.toString() || '');
         setQuantity(phone.quantity?.toString() || '1');
         setIsIphone(phone.isIphone || false);
-        // Properly handle images array
-        if (Array.isArray(phone.images)) {
-          console.log('Loading existing images:', phone.images);
-          setImages(phone.images);
-        }
+        setImages(phone.images || []);
+        setVideo(phone.video || null);
+        setVideoThumbnail(phone.videoThumbnail || null);
       } catch (error) {
         console.error('Error parsing phone data:', error);
       }
     }
   }, [isEdit, phoneData]);
 
-  const pickImage = async () => {
+  const pickImages = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsMultipleSelection: true,
         quality: 0.8,
+        aspect: [4, 3],
         base64: false,
+        selectionLimit: 4
       });
 
       if (!result.canceled && result.assets) {
-        const newImageUri = result.assets[0].uri;
-        console.log('New image URI:', newImageUri);
-        setImages(currentImages => [...currentImages, newImageUri]);
+        const newImages = result.assets.map(asset => asset.uri);
+        if (images.length + newImages.length > 4) {
+          alert('Maximum 4 images allowed');
+          return;
+        }
+
+        const compressedImages = await Promise.all(
+          newImages.map(uri => compressImage(uri))
+        );
+        
+        setImages(currentImages => [...currentImages, ...compressedImages]);
       }
     } catch (error) {
-      console.error('Error picking image:', error);
-      alert('Error selecting image. Please try again.');
+      console.error('Error picking images:', error);
+      alert('Error selecting images. Please try again.');
     }
   };
 
-  const removeImage = (index) => {
+  const pickVideo = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: true,
+        quality: 0.8,
+        videoMaxDuration: 60
+      });
+
+      if (!result.canceled && result.assets) {
+        const videoUri = result.assets[0].uri;
+        
+        const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
+          videoUri,
+          {
+            time: 0,
+            quality: 0.7
+          }
+        );
+        
+        setVideo(videoUri);
+        setVideoThumbnail(thumbnailUri);
+      }
+    } catch (error) {
+      console.error('Error picking video:', error);
+      alert('Error selecting video. Please try again.');
+    }
+  };
+
+  const removeImage = (index: number) => {
     setImages(currentImages => currentImages.filter((_, i) => i !== index));
+  };
+
+  const removeVideo = () => {
+    setVideo(null);
+    setVideoThumbnail(null);
+  };
+
+  const compressImage = async (uri: string): Promise<string> => {
+    try {
+      const manipulatedImage = await manipulateAsync(
+        uri,
+        [{ resize: { width: 1024 } }],
+        {
+          compress: 0.7,
+          format: SaveFormat.JPEG,
+        }
+      );
+      return manipulatedImage.uri;
+    } catch (error) {
+      console.error('Error compressing image:', error);
+      return uri;
+    }
   };
 
   const handleSave = async () => {
@@ -91,13 +153,30 @@ export default function AddEditPhoneScreen() {
       alert('Please fill in all required fields');
       return;
     }
-
+  
     try {
       setLoading(true);
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user found');
-
+  
+      // Generate a device ID
+      const deviceId = `${Date.now()}_${currentUser.uid}`;
+  
+      // Prepare media files for upload
+      const mediaFiles = [
+        ...images.map(uri => ({ uri, type: 'image' as const })),
+        ...(video ? [{ uri: video, type: 'video' as const }] : [])
+      ];
+  
+      // Upload media files
+      const mediaUrls = await storageService.uploadDeviceMedia(deviceId, mediaFiles);
+  
+      // Separate images and video URLs
+      const uploadedImages = mediaUrls.slice(0, images.length);
+      const uploadedVideo = mediaUrls[mediaUrls.length - 1];
+  
       const deviceData = {
+        id: deviceId,
         brand,
         model,
         storageGB: parseInt(storageGB),
@@ -106,19 +185,21 @@ export default function AddEditPhoneScreen() {
         quantity: parseInt(quantity),
         basePrice: parseFloat(basePrice),
         isIphone,
-        images, // Make sure images array is included
+        images: uploadedImages,
+        video: video ? uploadedVideo : null,
+        videoThumbnail: videoThumbnail,
         dealerId: currentUser.uid,
         createdAt: new Date(),
         updatedAt: new Date()
       };
-
+  
       if (isEdit) {
         const phoneId = JSON.parse(phoneData).id;
         await inventoryService.updateDevice(phoneId, deviceData);
       } else {
         await inventoryService.addDevice(deviceData);
       }
-
+  
       router.back();
     } catch (error) {
       console.error('Error saving device:', error);
@@ -127,8 +208,7 @@ export default function AddEditPhoneScreen() {
       setLoading(false);
     }
   };
-
-  // Rest of your component remains the same, including the return statement and styles
+  
 
   return (
     <Provider>
@@ -248,7 +328,7 @@ export default function AddEditPhoneScreen() {
           />
 
           <View style={styles.imageSection}>
-            <Text style={styles.sectionTitle}>Device Images</Text>
+            <Text style={styles.sectionTitle}>Device Images (Max 4)</Text>
             <View style={styles.imageGrid}>
               {images.map((uri, index) => (
                 <View key={index} style={styles.imageContainer}>
@@ -261,13 +341,40 @@ export default function AddEditPhoneScreen() {
                   />
                 </View>
               ))}
-              <IconButton
-                icon="camera"
-                size={24}
-                onPress={pickImage}
-                style={styles.addImageButton}
-              />
+              {images.length < 4 && (
+                <IconButton
+                  icon="camera"
+                  size={24}
+                  onPress={pickImages}
+                  style={styles.addImageButton}
+                />
+              )}
             </View>
+
+            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
+              Device Video (Optional)
+            </Text>
+            {video ? (
+              <View style={styles.videoContainer}>
+                <Image 
+                  source={{ uri: videoThumbnail || '' }} 
+                  style={styles.videoThumbnail}
+                />
+                <IconButton
+                  icon="close"
+                  size={20}
+                  onPress={removeVideo}
+                  style={styles.removeVideoButton}
+                />
+              </View>
+            ) : (
+              <IconButton
+                icon="video"
+                size={24}
+                onPress={pickVideo}
+                style={styles.addVideoButton}
+              />
+            )}
           </View>
 
           <View style={styles.buttonContainer}>
@@ -296,6 +403,10 @@ export default function AddEditPhoneScreen() {
     </Provider>
   );
 }
+
+// Note: The "const styles = StyleSheet.create({ ... })" portion has been removed.
+// The references (e.g., style={styles.container}) remain to preserve functionality.
+
 
 const styles = StyleSheet.create({
   container: {
@@ -393,5 +504,35 @@ const styles = StyleSheet.create({
   },
   cancelButtonLabel: {
     color: '#007BFF',
+  },
+   // ... existing styles ...
+   videoContainer: {
+    position: 'relative',
+    width: 160,
+    height: 90,
+    marginTop: 8,
+  },
+  videoThumbnail: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+  },
+  removeVideoButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    elevation: 2,
+  },
+  addVideoButton: {
+    width: 160,
+    height: 90,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+    marginTop: 8,
   }
 });

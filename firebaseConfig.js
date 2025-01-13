@@ -13,13 +13,13 @@ import { getStorage } from "firebase/storage";
 
 // Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyCdjiyTX4w_9GslQ95_KBXHyDqB0j5Ehis",
-  authDomain: "dealers-3c994.firebaseapp.com",
-  projectId: "dealers-3c994",
-  storageBucket: "dealers-3c994.appspot.com", // Corrected storage bucket URL
-  messagingSenderId: "537486287011",
-  appId: "1:537486287011:web:8352c99bdd80ae00985f16",
-  measurementId: "G-20K4G72RP4",
+  apiKey: "AIzaSyACFR7jBK81KsQKMpR7AMNfA5SPBwpkWo0",
+  authDomain: "dealers-f018b.firebaseapp.com",
+  projectId: "dealers-f018b",
+  storageBucket: "dealers-f018b.firebasestorage.app",
+  messagingSenderId: "744120809079",
+  appId: "1:744120809079:web:bf225d8e5e6d7e57357872",
+  measurementId: "G-0VTDGFJSW5"
 };
 
 // Initialize Firebase services
