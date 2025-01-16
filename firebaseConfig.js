@@ -1,3 +1,5 @@
+// firebaseConfig.js
+
 import { initializeApp, getApp } from "firebase/app";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import {
@@ -5,7 +7,7 @@ import {
   getReactNativePersistence,
   PhoneAuthProvider,
   signInWithCredential,
-  getAuth,
+  getAuth
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -21,26 +23,21 @@ const firebaseConfig = {
   appId: "1:744120809079:web:bf225d8e5e6d7e57357872",
   measurementId: "G-0VTDGFJSW5"
 };
+// Export firebaseConfig as default
+export default firebaseConfig;
 
-// Initialize Firebase services
+// Initialize Firebase
 let app;
 let auth;
 let db;
 let analytics = null;
 
 try {
-  // Initialize Firebase app
   app = initializeApp(firebaseConfig);
-
-  // Initialize Firebase Auth with React Native persistence
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage),
   });
-
-  // Initialize Firestore
   db = getFirestore(app);
-
-  // Initialize Analytics only if supported
   const initAnalytics = async () => {
     if (await isSupported()) {
       analytics = getAnalytics(app);
@@ -51,8 +48,6 @@ try {
   if (error.code !== "app/duplicate-app") {
     console.error("Firebase initialization error:", error);
   }
-  
-  // If already initialized, use existing instances
   app = getApp();
   auth = getAuth(app);
   db = getFirestore(app);
@@ -87,13 +82,18 @@ const verifyCode = async (verificationId, verificationCode) => {
   }
 };
 
-// Check if the user is logged in
 const isUserLoggedIn = () => {
   return auth.currentUser !== null;
 };
 
-// Initialize Firebase Storage
 const storage = getStorage(app);
 
-// Export initialized services and utility functions
-export { auth, db, storage, sendVerificationCode, verifyCode, isUserLoggedIn };
+export {
+  app,
+  auth,
+  db,
+  storage,
+  sendVerificationCode,
+  verifyCode,
+  isUserLoggedIn
+};

@@ -5,7 +5,7 @@ import { ActivityIndicator, Text } from 'react-native-paper';
 import { dealService } from '../../../services/dealService';
 import DealDetailsScreen from '../../screens/DealDetailsScreen';
 
-export default function DealDetailsRoute() {
+export default function HomeDealDetailsRoute() {
   const router = useRouter();
   const navigation = useNavigation();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -13,32 +13,29 @@ export default function DealDetailsRoute() {
   const [loading, setLoading] = useState(true);
 
   const handleBack = () => {
-    const returnTo = params.returnTo;
-    if (returnTo) {
-      router.replace(returnTo);
-    } else {
-      router.replace('/(tabs)/deals');
-    }
+    navigation.reset({
+      index: 0,
+      routes: [{ name: '(tabs)' }]
+    });
   };
-  
 
   useEffect(() => {
     const fetchDeal = async () => {
       try {
         setLoading(true);
         if (!id) {
-          router.replace('/(tabs)/deals');
+          router.replace('/(tabs)');
           return;
         }
         const dealData = await dealService.getDealById(id);
         if (!dealData) {
-          router.replace('/(tabs)/deals');
+          router.replace('/(tabs)');
           return;
         }
         setDeal(dealData);
       } catch (error) {
         console.error('Error fetching deal:', error);
-        router.replace('/(tabs)/deals');
+        router.replace('/(tabs)');
       } finally {
         setLoading(false);
       }

@@ -292,14 +292,22 @@ export default function InventoryScreen() {
             }
           >
             {filteredInventory.map((phone) => (
-              <InventoryCard
-                key={phone.id}
-                item={phone}
-                onEdit={() =>
-                  router.push(`/screens/AddEditPhoneScreen?isEdit=true&phoneData=${JSON.stringify(phone)}`)
-                }
-                onDelete={() => handleDelete(phone.id)}
-              />
+             <InventoryCard
+             key={phone.id}
+             item={phone}
+             onEdit={() => {
+               const phoneDataString = JSON.stringify(phone);
+               router.push({
+                 pathname: '/screens/AddEditPhoneScreen',
+                 params: { 
+                   isEdit: true, 
+                   phoneData: phoneDataString
+                 }
+               });
+             }}
+             onDelete={() => handleDelete(phone.id)}
+           />
+           
             ))}
           </ScrollView>
         )}

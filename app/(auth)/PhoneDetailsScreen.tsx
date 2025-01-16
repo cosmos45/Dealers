@@ -10,6 +10,10 @@ import {
 } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { inventoryService, SoldPhone, InventoryItem } from '../../services/inventoryService';
+import ImageView from 'react-native-image-viewing';
+import * as FileSystem from 'expo-file-system';
+import { auth, storage } from '../../firebaseConfig';
+import { getAuth } from 'firebase/auth';
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +39,21 @@ interface MarketInsights {
   totalSold: number;
 }
 
+// Add this before the return statement in PhoneDetailsScreen
+const handleImageError = (error: any) => {
+  if (error?.code === 'storage/unauthorized') {
+    console.error('User not authorized to access image');
+    return null;
+  }
+  if (error?.code === 'storage/invalid-format') {
+    console.error('Invalid image format');
+    return null;
+  }
+  console.error('Image loading error:', error);
+  return null;
+};
+
+
 export default function PhoneDetailsScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -45,95 +64,101 @@ export default function PhoneDetailsScreen() {
   const [phoneDetails, setPhoneDetails] = useState<PhoneDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-
-  // Updated states for in-memory sales
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [recentSales, setRecentSales] = useState<SoldPhone[]>([]);
   const [marketInsights, setMarketInsights] = useState<MarketInsights | null>(null);
-
-  // Existing "similar phones" logic from subscription
   const [similarPhones, setSimilarPhones] = useState<InventoryItem[]>([]);
+  const [imageLoadErrors, setImageLoadErrors] = useState<{[key: string]: boolean}>({});
+  const [imageCache, setImageCache] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
-    try {
-      const parsedData = JSON.parse(phoneData) as PhoneDetails;
-      console.log('Parsed phone data:', parsedData);
-      setPhoneDetails(parsedData);
-
-      // Fetch in-memory sales and insights
-      fetchSalesAndInsights(parsedData);
-
-      // Subscribe to inventory for "similar phones"
-      const unsubscribe = inventoryService.subscribeToInventory((items) => {
-        const similar = getSimilarPhones(items, parsedData);
-        setSimilarPhones(similar);
-      });
-
-      // Scroll to top
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-
-      return () => unsubscribe();
-    } catch (err) {
-      console.error('Error parsing phone details:', err);
-      setError('Unable to load phone details');
-    } finally {
-      setLoading(false);
-      setIsChangingDevice(false);
-    }
+    const checkAuth = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) {
+          setError('No authenticated user');
+          return;
+        }
+  
+        const parsedData = JSON.parse(phoneData) as PhoneDetails;
+        console.log('Parsed phone data:', parsedData);
+        setPhoneDetails(parsedData);
+  
+        // Fetch in-memory sales and insights
+        fetchSalesAndInsights(parsedData);
+  
+        // Subscribe to inventory for "similar phones"
+        const unsubscribe = inventoryService.subscribeToInventory((items) => {
+          const similar = getSimilarPhones(items, parsedData);
+          setSimilarPhones(similar);
+        });
+  
+        if (parsedData?.images) {
+          await Promise.all(parsedData.images.map(cacheImage));
+        }
+  
+        // Scroll to top
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  
+        setLoading(false);
+        setIsChangingDevice(false);
+  
+        return () => unsubscribe();
+      } catch (err) {
+        console.error('Error parsing phone details:', err);
+        setError('Unable to load phone details');
+        setLoading(false);
+      }
+    };
+  
+    checkAuth();
   }, [phoneData]);
 
-  /**
-   * NEW: Fetch recent sales and market insights in memory using 
-   *      inventoryService.getSoldDevicesWithDetails().
-   */
+  const cacheImage = async (uri: string) => {
+    try {
+      const cacheKey = `${FileSystem.cacheDirectory}${uri.split('/').pop()}`;
+      const cacheExists = await FileSystem.getInfoAsync(cacheKey);
+      
+      if (!cacheExists.exists) {
+        await FileSystem.downloadAsync(uri, cacheKey);
+      }
+      
+      setImageCache(prev => ({
+        ...prev,
+        [uri]: cacheKey
+      }));
+    } catch (error) {
+      console.error('Image caching error:', error);
+      setImageLoadErrors(prev => ({
+        ...prev,
+        [uri]: true
+      }));
+    }
+  };
+  
+  
+
   const fetchSalesAndInsights = async (phone: PhoneDetails) => {
     try {
       const allSoldPhones = await inventoryService.getSoldDevicesWithDetails();
-
-      /**
-       * 1) Try to match brand + model exactly.
-       */
-      const exactMatches = allSoldPhones.filter((sale) =>
+      const exactMatches = allSoldPhones.filter(sale => 
         sale.brand?.toLowerCase() === phone.brand.toLowerCase() &&
         sale.model?.toLowerCase() === phone.model.toLowerCase()
       );
-
-      let modelOrBrandSales: SoldPhone[];
-      if (exactMatches.length > 0) {
-        modelOrBrandSales = exactMatches;
-      } else {
-        /**
-         * 2) If no exact matches exist, fallback to brand-only match.
-         */
-        modelOrBrandSales = allSoldPhones.filter((sale) =>
+  
+      const modelOrBrandSales = exactMatches.length > 0 ? exactMatches : 
+        allSoldPhones.filter(sale => 
           sale.brand?.toLowerCase() === phone.brand.toLowerCase()
         );
-      }
-
-      // Sort descending by date
-      modelOrBrandSales.sort((a, b) => {
-        const dateA = new Date(a.soldAt).getTime();
-        const dateB = new Date(b.soldAt).getTime();
-        return dateB - dateA;
-      });
-
-      // -------------------------------
-      // RECENT SALES: only last 5
-      // Show in table with model + price
-      // -------------------------------
+  
       setRecentSales(modelOrBrandSales.slice(0, 5));
-
-      // -------------------------------
-      // MARKET INSIGHTS (same subset)
-      // -------------------------------
-      if (modelOrBrandSales.length === 0) {
-        setMarketInsights(null);
-      } else {
+      
+      if (modelOrBrandSales.length > 0) {
         const totalSold = modelOrBrandSales.length;
         const totalPrice = modelOrBrandSales.reduce((sum, sale) => sum + (sale.price || 0), 0);
-        const averagePrice = totalPrice / totalSold;
-
         setMarketInsights({
-          averagePrice,
+          averagePrice: totalPrice / totalSold,
           totalSold
         });
       }
@@ -142,28 +167,20 @@ export default function PhoneDetailsScreen() {
       setMarketInsights(null);
     }
   };
+  
 
   const getSimilarPhones = (items: InventoryItem[], phone: PhoneDetails): InventoryItem[] => {
     return items
       .filter((item) => {
         if (item.id === phone.id) return false;
-
-        const isSameBrand =
-          item.brand?.toLowerCase() === phone.brand.toLowerCase();
-        const modelMatch =
-          item.model?.toLowerCase().includes(phone.model.toLowerCase()) ||
+        const isSameBrand = item.brand?.toLowerCase() === phone.brand.toLowerCase();
+        const modelMatch = item.model?.toLowerCase().includes(phone.model.toLowerCase()) ||
           phone.model.toLowerCase().includes(item.model?.toLowerCase());
-
-        // Relaxed storage and RAM constraints
-        const hasSimilarStorage =
-          !phone.storageGB || Math.abs(item.storageGB - phone.storageGB) <= 128;
-        const hasSimilarRam =
-          !phone.ramGB || !item.ramGB || Math.abs(item.ramGB - phone.ramGB) <= 4;
-
+        const hasSimilarStorage = !phone.storageGB || Math.abs(item.storageGB - phone.storageGB) <= 128;
+        const hasSimilarRam = !phone.ramGB || !item.ramGB || Math.abs(item.ramGB - phone.ramGB) <= 4;
         return isSameBrand && (modelMatch || hasSimilarStorage || hasSimilarRam);
       })
       .sort((a, b) => {
-        // Sort by condition rank
         const conditionOrder: Record<string, number> = {
           New: 0,
           'Like New': 1,
@@ -173,21 +190,6 @@ export default function PhoneDetailsScreen() {
         };
         const aOrder = conditionOrder[a.condition] ?? 5;
         const bOrder = conditionOrder[b.condition] ?? 5;
-
-        if (aOrder === bOrder) {
-          // Then sort by "closeness" of specs
-          const aRelevance =
-            Math.abs(a.storageGB - phone.storageGB) +
-            (a.ramGB ? Math.abs(a.ramGB - (phone.ramGB || 0)) : 0) +
-            (a.model.toLowerCase().includes(phone.model.toLowerCase()) ? 0 : 1);
-
-          const bRelevance =
-            Math.abs(b.storageGB - phone.storageGB) +
-            (b.ramGB ? Math.abs(b.ramGB - (phone.ramGB || 0)) : 0) +
-            (b.model.toLowerCase().includes(phone.model.toLowerCase()) ? 0 : 1);
-
-          return aRelevance - bRelevance;
-        }
         return aOrder - bOrder;
       })
       .slice(0, 10);
@@ -200,6 +202,12 @@ export default function PhoneDetailsScreen() {
       pathname: '/(auth)/PhoneDetailsScreen',
       params: { phoneData: phoneDataString }
     });
+  };
+
+  const handleImagePress = (index: number) => {
+    console.log('Image pressed:', index);
+    setSelectedImageIndex(index);
+    setImageViewerVisible(true);
   };
 
   const handleViewMoreSimilar = () => {
@@ -238,11 +246,7 @@ export default function PhoneDetailsScreen() {
         </Appbar.Header>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error || 'Phone details not found'}</Text>
-          <Button
-            mode="contained"
-            onPress={() => router.back()}
-            style={styles.errorButton}
-          >
+          <Button mode="contained" onPress={() => router.back()} style={styles.errorButton}>
             Go Back
           </Button>
         </View>
@@ -258,7 +262,6 @@ export default function PhoneDetailsScreen() {
       </Appbar.Header>
 
       <ScrollView ref={scrollViewRef}>
-        {/* IMAGES / CAROUSEL */}
         <Card style={styles.imageCard}>
           {phoneDetails.images && phoneDetails.images.length > 0 ? (
             <View>
@@ -277,12 +280,43 @@ export default function PhoneDetailsScreen() {
                 scrollEventThrottle={16}
               >
                 {phoneDetails.images.map((uri, index) => (
-                  <Image
+                  <TouchableOpacity
                     key={index}
-                    source={{ uri }}
-                    style={styles.carouselImage}
-                    resizeMode="cover"
-                  />
+                    onPress={() => handleImagePress(index)}
+                  >
+                    <Image
+  source={{ 
+    uri: imageCache[uri] || uri,
+    headers: { 
+      Accept: 'image/*',
+      'Cache-Control': 'no-cache',
+      Authorization: `Bearer ${auth.currentUser?.getIdToken()}`
+    }
+  }}
+  defaultSource={require('../../assets/images/icon.png')}
+  style={styles.carouselImage}
+  resizeMode="cover"
+  onError={(e) => {
+    handleImageError(e.nativeEvent.error);
+    setImageLoadErrors(prev => ({
+      ...prev,
+      [uri]: true
+    }));
+  }}
+  onLoadStart={() => {
+    console.log('Starting to load image:', uri);
+  }}
+  onLoad={() => {
+    console.log('Image loaded successfully:', uri);
+    setImageLoadErrors(prev => ({
+      ...prev,
+      [uri]: false
+    }));
+  }}
+/>
+
+
+                  </TouchableOpacity>
                 ))}
               </ScrollView>
               <View style={styles.pagination}>
@@ -304,7 +338,6 @@ export default function PhoneDetailsScreen() {
           )}
         </Card>
 
-        {/* MAIN DETAILS */}
         <Card style={styles.detailsCard}>
           <Card.Content>
             <Text style={styles.title}>
@@ -358,14 +391,13 @@ export default function PhoneDetailsScreen() {
           </Card.Content>
         </Card>
 
-        {/* RECENT SALES (Model -> fallback Brand) */}
+        {/* RECENT SALES */}
         <Card style={styles.detailsCard}>
           <Card.Title title="Recent Sales" />
           <Card.Content>
             {recentSales.length > 0 ? (
               <DataTable>
                 <DataTable.Header>
-                  {/* Only two columns: Model and Price */}
                   <DataTable.Title>Model</DataTable.Title>
                   <DataTable.Title numeric>Price</DataTable.Title>
                 </DataTable.Header>
@@ -388,67 +420,75 @@ export default function PhoneDetailsScreen() {
 
         {/* SIMILAR PHONES */}
         <Card style={styles.detailsCard}>
-          <View style={styles.sectionHeader}>
-            <Card.Title title="Similar Models" />
-            {similarPhones.length > 0 && (
-              <Button
-                mode="text"
-                onPress={handleViewMoreSimilar}
-                style={styles.viewMoreButton}
-              >
-                View More
-              </Button>
-            )}
-          </View>
-          <Card.Content>
-            {similarPhones.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {similarPhones.map((phone) => (
-                  <TouchableOpacity
-                    key={phone.id}
-                    onPress={() => handleSimilarPhoneClick(phone)}
-                    style={styles.similarPhoneCard}
-                  >
-                    <Card style={styles.similarPhoneInnerCard}>
-                      {phone.images && phone.images[0] ? (
-                        <Image
-                          source={{ uri: phone.images[0] }}
-                          style={styles.similarPhoneImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.noImageContainer}>
-                          <Text style={styles.noImageText}>No image</Text>
-                        </View>
-                      )}
-                      <View style={styles.similarPhoneDetails}>
-                        <Text style={styles.similarPhoneModel}>
-                          {phone.model}
-                        </Text>
-                        <Text style={styles.similarPhoneStorage}>
-                          {phone.storageGB}GB
-                        </Text>
-                        <Text style={styles.similarPhonePrice}>
-                          ${phone.basePrice}
-                        </Text>
-                        <Text style={styles.similarPhoneCondition}>
-                          {phone.condition}
-                        </Text>
-                      </View>
-                    </Card>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : (
-              <Text style={styles.noDataText}>
-                No similar models available
-              </Text>
-            )}
-          </Card.Content>
-        </Card>
+  <View style={styles.sectionHeader}>
+    <Card.Title title="Similar Models" />
+    {similarPhones.length > 0 && (
+      <Button
+        mode="text"
+        onPress={handleViewMoreSimilar}
+        style={styles.viewMoreButton}
+      >
+        View More
+      </Button>
+    )}
+  </View>
+  <Card.Content>
+    {similarPhones.length > 0 ? (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {similarPhones.map((phone) => (
+          <TouchableOpacity
+            key={phone.id}
+            onPress={() => handleSimilarPhoneClick(phone)}
+            style={styles.similarPhoneCard}
+          >
+            <Card style={styles.similarPhoneInnerCard}>
+              {phone.images && phone.images[0] ? (
+                <Image
+                  source={{ uri: phone.images[0] }}
+                  style={styles.similarPhoneImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.noImageContainer}>
+                  <Text style={styles.noImageText}>No image</Text>
+                </View>
+              )}
+              <View style={styles.similarPhoneDetails}>
+                <Text style={styles.similarPhoneModel}>
+                  {phone.model}
+                </Text>
+                <Text style={styles.similarPhoneStorage}>
+                  {phone.storageGB}GB
+                </Text>
+                <Text style={styles.similarPhonePrice}>
+                  ${phone.basePrice}
+                </Text>
+                <Text style={styles.similarPhoneCondition}>
+                  {phone.condition}
+                </Text>
+              </View>
+            </Card>
+          </TouchableOpacity>
+        ))}
       </ScrollView>
+    ) : (
+      <Text style={styles.noDataText}>
+        No similar models available
+      </Text>
+    )}
+  </Card.Content>
+</Card>
+</ScrollView>
 
-      {/* Overlay while changing device */}
+<ImageView
+        images={phoneDetails?.images?.map(uri => ({ uri })) || []}
+        imageIndex={selectedImageIndex}
+        visible={imageViewerVisible}
+        onRequestClose={() => setImageViewerVisible(false)}
+        swipeToCloseEnabled={true}
+        doubleTapToZoomEnabled={true}
+      />
+
       {isChangingDevice && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#007BFF" />
@@ -458,6 +498,9 @@ export default function PhoneDetailsScreen() {
     </View>
   );
 }
+
+
+
 
 const styles = StyleSheet.create({
   container: {
@@ -490,17 +533,23 @@ const styles = StyleSheet.create({
   },
   imageCard: {
     margin: 16,
-    overflow: 'hidden'
+    overflow: 'hidden',
+    borderRadius: 8
   },
   carouselImage: {
     width: width - 32,
-    height: 300
+    height: 300,
+    borderRadius: 8
   },
   pagination: {
     flexDirection: 'row',
     position: 'absolute',
     bottom: 16,
-    alignSelf: 'center'
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12
   },
   paginationDot: {
     width: 8,
@@ -510,13 +559,16 @@ const styles = StyleSheet.create({
     margin: 4
   },
   paginationDotActive: {
-    backgroundColor: '#007BFF'
+    backgroundColor: '#007BFF',
+    width: 12,
+    height: 12
   },
   noImageContainer: {
     height: 300,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa'
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8
   },
   noImageText: {
     color: '#666',
@@ -524,7 +576,8 @@ const styles = StyleSheet.create({
   },
   detailsCard: {
     margin: 16,
-    marginTop: 0
+    marginTop: 0,
+    borderRadius: 8
   },
   title: {
     fontSize: 24,
@@ -592,11 +645,14 @@ const styles = StyleSheet.create({
     marginRight: 12
   },
   similarPhoneInnerCard: {
-    overflow: 'hidden'
+    overflow: 'hidden',
+    borderRadius: 8
   },
   similarPhoneImage: {
     width: '100%',
-    height: 120
+    height: 120,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8
   },
   similarPhoneDetails: {
     padding: 8
@@ -629,5 +685,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffffcc',
     justifyContent: 'center',
     alignItems: 'center'
+  },
+  imageViewerContainer: {
+    flex: 1,
+    backgroundColor: '#000'
+  },
+  imageViewerCloseButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 1
+  },
+  imageViewerIndicator: {
+    position: 'absolute',
+    bottom: 20,
+    alignSelf: 'center'
   }
 });

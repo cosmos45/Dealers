@@ -1,73 +1,92 @@
+// storageService.ts
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { auth } from '../firebaseConfig';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system';
 
 const storage = getStorage();
 
 export const storageService = {
-  async uploadDeviceMedia(deviceId: string, files: { uri: string, type: 'image' | 'video' }[]): Promise<string[]> {
+  async uploadMedia(uri: string, previousImageUrl?: string): Promise<string> {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user');
-
-      const uploadPromises = files.map(async (file, index) => {
-        const timestamp = Date.now();
-        const extension = file.type === 'image' ? 'jpg' : 'mp4';
-        const fileName = `${file.type}_${timestamp}_${index}.${extension}`;
-        const path = `devices/${deviceId}/${file.type}s/${fileName}`;
-        
-        let processedUri = file.uri;
-        if (file.type === 'image') {
-          processedUri = await this.compressImage(file.uri);
+  
+      // Improve image compression and format handling
+      const compressedImage = await manipulateAsync(
+        uri,
+        [{ resize: { width: 1024 } }], // Increased width for better quality
+        { 
+          compress: 0.5, // Better quality compression
+          format: SaveFormat.JPEG,
         }
-
-        const response = await fetch(processedUri);
-        const blob = await response.blob();
-        const storageRef = ref(storage, path);
-        
-        await uploadBytes(storageRef, blob);
-        const downloadURL = await getDownloadURL(storageRef);
-
-        // Cleanup temporary files
-        if (processedUri !== file.uri) {
-          await FileSystem.deleteAsync(processedUri, { idempotent: true });
+      );
+  
+      const response = await fetch(compressedImage.uri);
+      const blob = await response.blob();
+      
+      // Enhanced metadata
+      const metadata = {
+        contentType: 'image/jpeg',
+        cacheControl: 'public,max-age=86400',
+        customMetadata: {
+          uploadedBy: currentUser.uid,
+          timestamp: Date.now().toString()
         }
+      };
+  
+      const fileName = `image_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const path = `users/${currentUser.uid}/images/${fileName}`;
+      const storageRef = ref(storage, path);
+  
+      await uploadBytes(storageRef, blob, metadata);
+      return await getDownloadURL(storageRef);
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error;
+    }
+  }
+  
+,  
 
-        return downloadURL;
-      });
-
+  // Keep existing methods
+  async replaceImages(newUris: string[], previousUrls: string[]): Promise<string[]> {
+    try {
+      await this.deleteMultipleMedia(previousUrls);
+      const uploadPromises = newUris.map(uri => this.uploadMedia(uri));
       return await Promise.all(uploadPromises);
     } catch (error) {
-      console.error('Error uploading media:', error);
+      console.error('Error replacing images:', error);
       throw error;
     }
   },
 
-  async compressImage(uri: string): Promise<string> {
+  async deleteMedia(url: string): Promise<void> {
+    if (!url) return;
+    
     try {
-      const result = await manipulateAsync(
-        uri,
-        [{ resize: { width: 800, height: 800 } }],
-        {
-          compress: 0.5,
-          format: SaveFormat.JPEG
-        }
-      );
-      return result.uri;
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('No authenticated user');
+
+      const urlPath = decodeURIComponent(url.split('/o/')[1].split('?')[0]);
+      const fileRef = ref(storage, urlPath);
+      
+      await deleteObject(fileRef);
     } catch (error) {
-      console.error('Error compressing image:', error);
-      return uri;
+      if (error.code === 'storage/object-not-found') {
+        console.log('File already deleted or does not exist');
+        return;
+      }
+      throw error;
     }
   },
 
-  async deleteDeviceMedia(deviceId: string): Promise<void> {
+  async deleteMultipleMedia(urls: string[]): Promise<void> {
+    if (!urls || urls.length === 0) return;
+    const deletePromises = urls.map(url => this.deleteMedia(url));
     try {
-      const folderPath = `devices/${deviceId}`;
-      const folderRef = ref(storage, folderPath);
-      await deleteObject(folderRef);
+      await Promise.all(deletePromises);
     } catch (error) {
-      console.error('Error deleting device media:', error);
+      console.error('Error deleting multiple images:', error);
       throw error;
     }
   }

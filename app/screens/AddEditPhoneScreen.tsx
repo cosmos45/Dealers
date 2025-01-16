@@ -1,27 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Image } from 'react-native';
-import { Appbar, TextInput, Button, Surface, Text, Menu, Provider, Switch, IconButton } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Image, ActivityIndicator } from 'react-native';
+import {
+  Appbar, TextInput, Button, Surface, Text, Menu, 
+  Provider, Switch, IconButton
+} from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { inventoryService } from '../../services/inventoryService';
 import { auth } from '../../firebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
-import * as VideoThumbnails from 'expo-video-thumbnails';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { storageService } from '../../services/storageService';
 
 const CONDITIONS = [
-  { label: "Brand New (Sealed)", value: "brand_new" },
-  { label: "Like New (Open Box)", value: "like_new" },
-  { label: "Excellent (9/10)", value: "excellent" },
-  { label: "Very Good (8/10)", value: "very_good" },
-  { label: "Good (7/10)", value: "good" },
-  { label: "Fair (6/10)", value: "fair" },
-  { label: "Refurbished (Certified)", value: "refurbished" },
-  { label: "For Parts Only", value: "parts" }
+  { label: 'Brand New (Sealed)', value: 'brand_new' },
+  { label: 'Like New (Open Box)', value: 'like_new' },
+  { label: 'Excellent (9/10)', value: 'excellent' },
+  { label: 'Very Good (8/10)', value: 'very_good' },
+  { label: 'Good (7/10)', value: 'good' },
+  { label: 'Fair (6/10)', value: 'fair' },
+  { label: 'Refurbished (Certified)', value: 'refurbished' },
+  { label: 'For Parts Only', value: 'parts' }
 ];
 
 export default function AddEditPhoneScreen() {
   const router = useRouter();
   const { isEdit, phoneData } = useLocalSearchParams();
+
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [condition, setCondition] = useState('');
@@ -33,8 +36,7 @@ export default function AddEditPhoneScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [images, setImages] = useState<string[]>([]);
-  const [video, setVideo] = useState<string | null>(null);
-  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (isIphone) {
@@ -45,30 +47,39 @@ export default function AddEditPhoneScreen() {
   useEffect(() => {
     if (isEdit && phoneData) {
       try {
-        const phone = JSON.parse(phoneData);
-        setBrand(phone.brand || '');
-        setModel(phone.model || '');
-        setCondition(phone.condition || '');
-        setStorageGB(phone.storageGB?.toString() || '');
-        setRamGB(phone.ramGB?.toString() || '');
-        setBasePrice(phone.basePrice?.toString() || '');
-        setQuantity(phone.quantity?.toString() || '1');
-        setIsIphone(phone.isIphone || false);
-        setImages(phone.images || []);
-        setVideo(phone.video || null);
-        setVideoThumbnail(phone.videoThumbnail || null);
+        const parsedData = typeof phoneData === 'string' 
+          ? JSON.parse(phoneData)
+          : phoneData;
+        
+        if (!parsedData) {
+          throw new Error('Invalid phone data');
+        }
+  
+        setBrand(parsedData.brand || '');
+        setModel(parsedData.model || '');
+        setCondition(parsedData.condition || '');
+        setStorageGB(parsedData.storageGB?.toString() || '');
+        setRamGB(parsedData.ramGB?.toString() || '');
+        setBasePrice(parsedData.basePrice?.toString() || '');
+        setQuantity(parsedData.quantity?.toString() || '1');
+        setIsIphone(parsedData.isIphone || false);
+        setImages(parsedData.images || []);
+        
       } catch (error) {
         console.error('Error parsing phone data:', error);
+        alert('Unable to load phone data for editing');
+        router.back();
       }
     }
-  }, [isEdit, phoneData]);
+  }, [isEdit, phoneData, router]);
 
   const pickImages = async () => {
     try {
+      setIsUploading(true);
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
-        quality: 0.8,
+        quality: 0.1,
         aspect: [4, 3],
         base64: false,
         selectionLimit: 4
@@ -81,71 +92,22 @@ export default function AddEditPhoneScreen() {
           return;
         }
 
-        const compressedImages = await Promise.all(
-          newImages.map(uri => compressImage(uri))
+        const uploadedUrls = await Promise.all(
+          newImages.map(uri => storageService.uploadMedia(uri))
         );
-        
-        setImages(currentImages => [...currentImages, ...compressedImages]);
+
+        setImages(current => [...current, ...uploadedUrls]);
       }
     } catch (error) {
       console.error('Error picking images:', error);
       alert('Error selecting images. Please try again.');
-    }
-  };
-
-  const pickVideo = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        allowsEditing: true,
-        quality: 0.8,
-        videoMaxDuration: 60
-      });
-
-      if (!result.canceled && result.assets) {
-        const videoUri = result.assets[0].uri;
-        
-        const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
-          videoUri,
-          {
-            time: 0,
-            quality: 0.7
-          }
-        );
-        
-        setVideo(videoUri);
-        setVideoThumbnail(thumbnailUri);
-      }
-    } catch (error) {
-      console.error('Error picking video:', error);
-      alert('Error selecting video. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
   const removeImage = (index: number) => {
-    setImages(currentImages => currentImages.filter((_, i) => i !== index));
-  };
-
-  const removeVideo = () => {
-    setVideo(null);
-    setVideoThumbnail(null);
-  };
-
-  const compressImage = async (uri: string): Promise<string> => {
-    try {
-      const manipulatedImage = await manipulateAsync(
-        uri,
-        [{ resize: { width: 1024 } }],
-        {
-          compress: 0.7,
-          format: SaveFormat.JPEG,
-        }
-      );
-      return manipulatedImage.uri;
-    } catch (error) {
-      console.error('Error compressing image:', error);
-      return uri;
-    }
+    setImages(current => current.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -159,24 +121,15 @@ export default function AddEditPhoneScreen() {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user found');
   
-      // Generate a device ID
-      const deviceId = `${Date.now()}_${currentUser.uid}`;
-  
-      // Prepare media files for upload
-      const mediaFiles = [
-        ...images.map(uri => ({ uri, type: 'image' as const })),
-        ...(video ? [{ uri: video, type: 'video' as const }] : [])
-      ];
-  
-      // Upload media files
-      const mediaUrls = await storageService.uploadDeviceMedia(deviceId, mediaFiles);
-  
-      // Separate images and video URLs
-      const uploadedImages = mediaUrls.slice(0, images.length);
-      const uploadedVideo = mediaUrls[mediaUrls.length - 1];
+      if (isEdit) {
+        const phone = JSON.parse(phoneData);
+        const oldImages = phone?.images || [];
+        const newImageSet = new Set(images);
+        const imagesToDelete = oldImages.filter(img => !newImageSet.has(img));
+        await storageService.deleteMultipleMedia(imagesToDelete);
+      }
   
       const deviceData = {
-        id: deviceId,
         brand,
         model,
         storageGB: parseInt(storageGB),
@@ -185,19 +138,19 @@ export default function AddEditPhoneScreen() {
         quantity: parseInt(quantity),
         basePrice: parseFloat(basePrice),
         isIphone,
-        images: uploadedImages,
-        video: video ? uploadedVideo : null,
-        videoThumbnail: videoThumbnail,
+        images,
         dealerId: currentUser.uid,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        status: 'available'
       };
   
       if (isEdit) {
-        const phoneId = JSON.parse(phoneData).id;
+        const phone = JSON.parse(phoneData);
+        const phoneId = phone?.id;
         await inventoryService.updateDevice(phoneId, deviceData);
       } else {
-        await inventoryService.addDevice(deviceData);
+        const docRef = await inventoryService.addDevice(deviceData);
+        console.log('New device added with ID:', docRef.id);
       }
   
       router.back();
@@ -208,175 +161,73 @@ export default function AddEditPhoneScreen() {
       setLoading(false);
     }
   };
-  
+
 
   return (
     <Provider>
       <Surface style={styles.container}>
         <Appbar.Header style={styles.header}>
           <Appbar.BackAction onPress={() => router.back()} color="#007BFF" />
-          <Appbar.Content 
-            title={isEdit ? "Edit Device" : "Add New Device"} 
+          <Appbar.Content
+            title={isEdit ? 'Edit Device' : 'Add New Device'}
             titleStyle={styles.headerTitle}
           />
         </Appbar.Header>
 
         <ScrollView style={styles.content}>
+          {/* iPhone Toggle */}
           <View style={styles.switchContainer}>
             <Text style={styles.switchLabel}>iPhone Device</Text>
-            <Switch
-              value={isIphone}
-              onValueChange={setIsIphone}
-              color="#007BFF"
-            />
+            <Switch value={isIphone} onValueChange={setIsIphone} color="#007BFF" />
           </View>
 
-          <TextInput
-            label="Brand *"
-            value={brand}
-            onChangeText={setBrand}
-            mode="outlined"
-            style={styles.input}
-            disabled={isIphone}
-            outlineColor="#E0E0E0"
-            activeOutlineColor="#007BFF"
-          />
-
-          <TextInput
-            label="Model *"
-            value={model}
-            onChangeText={setModel}
-            mode="outlined"
-            style={styles.input}
-            outlineColor="#E0E0E0"
-            activeOutlineColor="#007BFF"
-          />
-
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <TextInput
-                label="Condition *"
-                value={condition}
-                mode="outlined"
-                style={styles.input}
-                right={<TextInput.Icon icon="menu-down" />}
-                onTouchStart={() => setMenuVisible(true)}
-                outlineColor="#E0E0E0"
-                activeOutlineColor="#007BFF"
-              />
-            }
-          >
-            {CONDITIONS.map((item) => (
-              <Menu.Item
-                key={item.value}
-                onPress={() => {
-                  setCondition(item.label);
-                  setMenuVisible(false);
-                }}
-                title={item.label}
-              />
+          {/* Input Fields */}
+          <TextInput label="Brand *" value={brand} onChangeText={setBrand} mode="outlined" style={styles.input} disabled={isIphone}   outlineColor="#E0E0E0"
+  activeOutlineColor="#007BFF" />
+          <TextInput label="Model *" value={model} onChangeText={setModel} mode="outlined" style={styles.input}   outlineColor="#E0E0E0"
+  activeOutlineColor="#007BFF"/>
+          <Menu visible={menuVisible} onDismiss={() => setMenuVisible(false)} anchor={
+            <TextInput label="Condition *" value={condition} mode="outlined" style={styles.input} right={<TextInput.Icon icon="menu-down" />} onTouchStart={() => setMenuVisible(true)}   outlineColor="#E0E0E0"
+            activeOutlineColor="#007BFF" />
+          }>
+            {CONDITIONS.map(item => (
+              <Menu.Item key={item.value} onPress={() => {setCondition(item.label);setMenuVisible(false);}} title={item.label} />
             ))}
           </Menu>
-
-          <TextInput
-            label="Storage (GB) *"
-            value={storageGB}
-            onChangeText={setStorageGB}
-            mode="outlined"
-            keyboardType="numeric"
-            style={styles.input}
-            outlineColor="#E0E0E0"
-            activeOutlineColor="#007BFF"
-          />
-
+          <TextInput label="Storage (GB) *" value={storageGB} onChangeText={setStorageGB} mode="outlined" keyboardType="numeric" style={styles.input}  outlineColor="#E0E0E0"
+  activeOutlineColor="#007BFF" />
           {!isIphone && (
-            <TextInput
-              label="RAM (GB) *"
-              value={ramGB}
-              onChangeText={setRamGB}
-              mode="outlined"
-              keyboardType="numeric"
-              style={styles.input}
-              outlineColor="#E0E0E0"
-              activeOutlineColor="#007BFF"
-            />
+            <TextInput label="RAM (GB)" value={ramGB} onChangeText={setRamGB} mode="outlined" keyboardType="numeric" style={styles.input}   outlineColor="#E0E0E0"
+            activeOutlineColor="#007BFF" />
           )}
+          <TextInput label="Base Price *" value={basePrice} onChangeText={setBasePrice} mode="outlined" keyboardType="numeric" left={<TextInput.Affix text="$" />} style={styles.input}   outlineColor="#E0E0E0"
+  activeOutlineColor="#007BFF"/>
+          <TextInput label="Quantity in Stock *" value={quantity} onChangeText={setQuantity} mode="outlined" keyboardType="numeric" style={styles.input}   outlineColor="#E0E0E0"
+  activeOutlineColor="#007BFF" />
 
-          <TextInput
-            label="Base Price *"
-            value={basePrice}
-            onChangeText={setBasePrice}
-            mode="outlined"
-            keyboardType="numeric"
-            style={styles.input}
-            left={<TextInput.Affix text="$" />}
-            outlineColor="#E0E0E0"
-            activeOutlineColor="#007BFF"
-          />
-
-          <TextInput
-            label="Quantity in Stock *"
-            value={quantity}
-            onChangeText={setQuantity}
-            mode="outlined"
-            keyboardType="numeric"
-            style={styles.input}
-            outlineColor="#E0E0E0"
-            activeOutlineColor="#007BFF"
-          />
-
+          {/* Image Section */}
           <View style={styles.imageSection}>
             <Text style={styles.sectionTitle}>Device Images (Max 4)</Text>
             <View style={styles.imageGrid}>
               {images.map((uri, index) => (
                 <View key={index} style={styles.imageContainer}>
                   <Image source={{ uri }} style={styles.imagePreview} />
-                  <IconButton
-                    icon="close"
-                    size={20}
-                    onPress={() => removeImage(index)}
-                    style={styles.removeImageButton}
-                  />
+                  <IconButton icon="close" size={20} onPress={() => removeImage(index)} style={styles.removeImageButton} />
                 </View>
               ))}
-              {images.length < 4 && (
-                <IconButton
-                  icon="camera"
-                  size={24}
-                  onPress={pickImages}
-                  style={styles.addImageButton}
-                />
+              {images.length < 4 && !isUploading && (
+                <IconButton icon="camera" size={24} onPress={pickImages} style={styles.addImageButton} />
               )}
             </View>
-
-            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
-              Device Video (Optional)
-            </Text>
-            {video ? (
-              <View style={styles.videoContainer}>
-                <Image 
-                  source={{ uri: videoThumbnail || '' }} 
-                  style={styles.videoThumbnail}
-                />
-                <IconButton
-                  icon="close"
-                  size={20}
-                  onPress={removeVideo}
-                  style={styles.removeVideoButton}
-                />
+            {isUploading && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#007AFF" />
+                <Text>Uploading images...</Text>
               </View>
-            ) : (
-              <IconButton
-                icon="video"
-                size={24}
-                onPress={pickVideo}
-                style={styles.addVideoButton}
-              />
             )}
           </View>
 
+          {/* Save and Cancel Buttons */}
           <View style={styles.buttonContainer}>
             <Button
               mode="contained"
@@ -404,8 +255,6 @@ export default function AddEditPhoneScreen() {
   );
 }
 
-// Note: The "const styles = StyleSheet.create({ ... })" portion has been removed.
-// The references (e.g., style={styles.container}) remain to preserve functionality.
 
 
 const styles = StyleSheet.create({
@@ -505,34 +354,5 @@ const styles = StyleSheet.create({
   cancelButtonLabel: {
     color: '#007BFF',
   },
-   // ... existing styles ...
-   videoContainer: {
-    position: 'relative',
-    width: 160,
-    height: 90,
-    marginTop: 8,
-  },
-  videoThumbnail: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 8,
-  },
-  removeVideoButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    elevation: 2,
-  },
-  addVideoButton: {
-    width: 160,
-    height: 90,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderStyle: 'dashed',
-    marginTop: 8,
-  }
+   
 });

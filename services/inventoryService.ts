@@ -1,5 +1,6 @@
-import { collection, addDoc, query, getDocs, where, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, query, getDocs, where, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, writeBatch, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
+import { storageService } from './storageService';
 
 export interface InventoryItem {
   id?: string;
@@ -13,6 +14,7 @@ export interface InventoryItem {
   dealerId: string;
   isIphone: boolean;
   status: 'available' | 'sold';
+  images?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,7 +37,6 @@ export const inventoryService = {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user found');
 
-      // Using existing index: dealerId Ascending soldAt Descending __name__ Descending
       const q = query(
         collection(db, 'soldPhones'),
         where('dealerId', '==', currentUser.uid),
@@ -56,10 +57,8 @@ export const inventoryService = {
 
   async searchSoldDevices(searchQuery: string): Promise<SoldPhone[]> {
     try {
-      // Get all devices first using the existing index
       const devices = await this.getSoldDevicesWithDetails();
       
-      // Filter in memory since we can't use compound queries with the current indexes
       if (!searchQuery.trim()) return devices;
       
       const searchLower = searchQuery.toLowerCase();
@@ -121,21 +120,16 @@ export const inventoryService = {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user found');
   
-      // Match the existing index structure
       const q = query(
         collection(db, 'inventory'),
         where('dealerId', '==', currentUser.uid),
         where('status', '==', 'available'),
         orderBy('model', 'asc'),
-        orderBy('__name__', 'asc') // Matches your index
+        orderBy('__name__', 'asc')
       );
   
-      console.log('Executing Firestore query...');
       const querySnapshot = await getDocs(q);
   
-      console.log('Firestore returned:', querySnapshot.docs.length, 'documents');
-  
-      // Filter results based on the search query
       const filteredResults = querySnapshot.docs
         .filter((doc) => {
           const data = doc.data();
@@ -150,20 +144,12 @@ export const inventoryService = {
           ...doc.data(),
         })) as InventoryItem[];
   
-      console.log('Filtered results:', filteredResults);
       return filteredResults;
     } catch (error) {
       console.error('Error searching inventory:', error);
       throw error;
     }
-  }
-  
-,  
-  
-  
-  
-  
-  
+  },
 
   async updateDeviceStatus(deviceIds: string[], status: 'available' | 'sold') {
     try {
@@ -199,13 +185,50 @@ export const inventoryService = {
 
   async deleteDevice(deviceId: string) {
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('No authenticated user found');
+      }
+  
+      // Check document existence first
       const docRef = doc(db, 'inventory', deviceId);
+      const deviceDoc = await getDoc(docRef);
+  
+      // Handle non-existent document gracefully
+      if (!deviceDoc.exists()) {
+        throw new Error('Device not found');
+      }
+  
+      const deviceData = deviceDoc.data();
+      
+      // Verify ownership
+      if (deviceData.dealerId !== currentUser.uid) {
+        throw new Error('Permission denied: Device belongs to another dealer');
+      }
+  
+      // Delete associated images if they exist
+      if (deviceData.images?.length) {
+        await Promise.all(
+          deviceData.images.map(async (imageUrl) => {
+            try {
+              await storageService.deleteMedia(imageUrl);
+            } catch (error) {
+              console.warn('Error deleting image:', error);
+            }
+          })
+        );
+      }
+  
+      // Delete the document
       await deleteDoc(docRef);
+      return true;
     } catch (error) {
       console.error('Error deleting device:', error);
       throw error;
     }
-  },
+  }
+  
+  ,  
 
   async refreshInventory() {
     try {

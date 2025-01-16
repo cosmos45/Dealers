@@ -1,4 +1,18 @@
-import { collection, addDoc, query, getDocs, where, orderBy, doc, updateDoc, deleteDoc, limit, writeBatch, getDoc } from 'firebase/firestore';
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  getDocs, 
+  where, 
+  orderBy, 
+  doc, 
+  updateDoc, 
+  deleteDoc, 
+  limit, 
+  writeBatch, 
+  getDoc 
+} from 'firebase/firestore';
+import { getStorage, ref, deleteObject } from "firebase/storage";
 import { db, auth } from '../firebaseConfig';
 import { inventoryService } from './inventoryService';
 
@@ -44,12 +58,31 @@ export interface MarketInsights {
   wholesaleAverage: number;
 }
 
+// Helper function to delete images from Firebase Storage
+async function deleteImages(imageUrls: string[]) {
+  const storage = getStorage();
+  
+  const deletePromises = imageUrls.map((url) => {
+    const fileRef = ref(storage, url);
+    return deleteObject(fileRef).catch((error) => {
+      console.warn(`Failed to delete image at ${url}:`, error);
+    });
+  });
+
+  await Promise.all(deletePromises);
+}
+
+
+
+
+
 export const dealService = {
+  
   async addDeal(dealData: Omit<Deal, 'id' | 'date' | 'dealerId' | 'createdAt' | 'updatedAt'>) {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user found');
-
+  
       const deal = {
         ...dealData,
         date: new Date().toISOString(),
@@ -57,46 +90,75 @@ export const dealService = {
         createdAt: new Date(),
         updatedAt: new Date()
       };
-
-      // Remove undefined fields
+  
       const cleanDeal = Object.fromEntries(
         Object.entries(deal).filter(([_, value]) => value !== undefined)
       );
-
-      // Create the deal
+  
+      // Add deal to Firestore
       const docRef = await addDoc(collection(db, 'deals'), cleanDeal);
-
-      // Add to soldPhones collection
-      const soldPhonePromises = deal.phones.map(phone => 
-        addDoc(collection(db, 'soldPhones'), {
-          model: phone.model,
-          condition: phone.condition || 'good',
-          price: phone.price,
-          dealId: docRef.id,
-          dealerId: currentUser.uid,
-          dealerName: deal.customerName,
-          dealType: deal.dealType,
-          soldAt: new Date().toISOString()
+  
+      // Fetch phone details from inventory and create sold phone records
+      const soldPhonePromises = await Promise.all(
+        deal.phones.map(async phone => {
+          let brand = '';
+          if (phone.phoneId) {
+            const phoneDoc = await getDoc(doc(db, "inventory", phone.phoneId));
+            if (phoneDoc.exists()) {
+              brand = phoneDoc.data().brand;
+            }
+          }
+  
+          return addDoc(collection(db, 'soldPhones'), {
+            model: phone.model,
+            condition: phone.condition || 'good',
+            price: phone.price,
+            dealId: docRef.id,
+            dealerId: currentUser.uid,
+            dealerName: deal.customerName,
+            dealType: deal.dealType,
+            brand: brand,
+            soldAt: new Date().toISOString()
+          });
         })
       );
-
+  
       await Promise.all(soldPhonePromises);
-
-      // Update inventory status if phoneIds exist
-      const phoneIds = deal.phones
-        .filter(phone => phone.phoneId)
-        .map(phone => phone.phoneId as string);
+  
+      // Update inventory quantities
+      const inventoryUpdates = deal.phones.map(async phone => {
+        if (phone.phoneId) {
+          const phoneRef = doc(db, 'inventory', phone.phoneId);
+          const phoneDoc = await getDoc(phoneRef);
+          
+          if (phoneDoc.exists()) {
+            const currentQuantity = phoneDoc.data().quantity;
+            const newQuantity = currentQuantity - (phone.quantity || 1);
+            
+            if (newQuantity < 0) {
+              throw new Error(`Insufficient quantity for phone ${phone.model}`);
+            }
       
-      if (phoneIds.length > 0) {
-        await inventoryService.updateDeviceStatus(phoneIds, 'sold');
-      }
-
+            await updateDoc(phoneRef, {
+              quantity: newQuantity,
+              status: newQuantity === 0 ? 'sold' : 'available',
+              updatedAt: new Date()
+            });
+          }
+        }
+      });
+      
+  
+      await Promise.all(inventoryUpdates);
+  
       return docRef.id;
+  
     } catch (error) {
       console.error('Error adding deal:', error);
       throw error;
     }
-  },
+  }
+,  
 
   async getPhoneConditions(dealId: string) {
     try {
@@ -146,7 +208,7 @@ export const dealService = {
     }
   },
 
-  // Add this method to dealService
+
   async getDealById(dealId: string): Promise<Deal | null> {
     try {
       const currentUser = auth.currentUser;
@@ -168,6 +230,33 @@ export const dealService = {
       throw error;
     }
   },
+
+ async subscribeToRecentDeals(onUpdate: (deals: Deal[]) => void) {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('No authenticated user found');
+
+    const q = query(
+      collection(db, 'deals'),
+      where('dealerId', '==', currentUser.uid),
+      orderBy('createdAt', 'desc'),
+      limit(5)
+    );
+
+    return onSnapshot(q, (snapshot) => {
+      const deals = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Deal[];
+      onUpdate(deals);
+    });
+  } catch (error) {
+    console.error('Error subscribing to recent deals:', error);
+    throw error;
+  }
+}
+,
+  
 
   async getRecentSales(model: string): Promise<SaleHistory[]> {
     try {

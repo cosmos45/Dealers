@@ -1,50 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { View, ScrollView, Linking } from 'react-native';
 import { Appbar, Surface, Text, ActivityIndicator, Card, Chip, DataTable, Button, Divider } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import { dealService } from '../../services/dealService';
 import { StyleSheet } from 'react-native';
 import { format } from 'date-fns';
 
-interface Phone {
-  model: string;
-  price: number;
-  quantity: number;
-  phoneId?: string;
-}
-
-interface PhoneConditions {
-  [key: string]: string;
-}
-
-interface Deal {
-  id?: string;
-  customerName: string;
-  contact: string;
-  totalAmount: number;
-  status: 'Paid' | 'Pending';
-  phones: Phone[];
-  paymentMode: 'cash' | 'online' | 'credit';
-  creditTerm?: number;
-  dealerId: string;
-  dealType: 'retail' | 'wholesale';
-  createdAt?: Date;
-  updatedAt?: Date;
-  date?: string;
-}
-
 interface DealDetailsProps {
   id: string;
-  from?: string;
 }
 
 const THEME_COLOR = '#007BFF';
 const SUCCESS_COLOR = '#28a745';
 
-export default function DealDetailsScreen({ id, from }: DealDetailsProps) {
+export default function HomeDealDetailsScreen({ id }: DealDetailsProps) {
   const router = useRouter();
-  const [deal, setDeal] = useState<Deal | null>(null);
-  const [phoneConditions, setPhoneConditions] = useState<PhoneConditions>({});
+  const navigation = useNavigation();
+  const [deal, setDeal] = useState(null);
+  const [phoneConditions, setPhoneConditions] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -68,61 +41,12 @@ export default function DealDetailsScreen({ id, from }: DealDetailsProps) {
     fetchDealData();
   }, [id]);
 
-  const formatDate = (date: string | Date | { seconds: number; nanoseconds: number }) => {
-    try {
-      if (!date) return 'No date available';
-      
-      if (typeof date === 'object' && 'seconds' in date) {
-        return format(new Date(date.seconds * 1000), 'PPp');
-      }
-      
-      if (typeof date === 'string' && date.includes('T')) {
-        return format(new Date(date), 'PPp');
-      }
-      
-      if (typeof date === 'string' && date.includes('UTC')) {
-        const parsedDate = new Date(date.replace(' UTC', ''));
-        return format(parsedDate, 'PPp');
-      }
-      
-      return format(new Date(date), 'PPp');
-    } catch (error) {
-      console.error('Date formatting error:', error);
-      return 'Invalid date';
-    }
+  const handleBack = () => {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: '(tabs)' }]
+    });
   };
-
-  const handleCallPress = (phoneNumber: string) => {
-    Linking.openURL(`tel:${phoneNumber}`);
-  };
-
-  if (loading) {
-    return (
-      <Surface style={styles.container}>
-        <Appbar.Header style={styles.header}>
-          <Appbar.BackAction onPress={() => router.back()} color={THEME_COLOR} />
-          <Appbar.Content title="Deal Details" titleStyle={styles.headerTitle} />
-        </Appbar.Header>
-        <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color={THEME_COLOR} />
-        </View>
-      </Surface>
-    );
-  }
-
-  if (!deal) {
-    return (
-      <Surface style={styles.container}>
-        <Appbar.Header style={styles.header}>
-          <Appbar.BackAction onPress={() => router.back()} color={THEME_COLOR} />
-          <Appbar.Content title="Deal Details" titleStyle={styles.headerTitle} />
-        </Appbar.Header>
-        <View style={styles.errorContainer}>
-          <Text>Deal not found</Text>
-        </View>
-      </Surface>
-    );
-  }
 
   return (
     <Surface style={styles.container}>
