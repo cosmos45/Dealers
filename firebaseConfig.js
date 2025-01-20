@@ -1,6 +1,4 @@
-// firebaseConfig.js
-
-import { initializeApp, getApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import {
   initializeAuth,
@@ -13,7 +11,6 @@ import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getStorage } from "firebase/storage";
 
-// Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyACFR7jBK81KsQKMpR7AMNfA5SPBwpkWo0",
   authDomain: "dealers-f018b.firebaseapp.com",
@@ -23,45 +20,54 @@ const firebaseConfig = {
   appId: "1:744120809079:web:bf225d8e5e6d7e57357872",
   measurementId: "G-0VTDGFJSW5"
 };
-// Export firebaseConfig as default
-export default firebaseConfig;
 
-// Initialize Firebase
 let app;
 let auth;
 let db;
 let analytics = null;
+let storage;
 
-try {
-  app = initializeApp(firebaseConfig);
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
-  db = getFirestore(app);
-  const initAnalytics = async () => {
-    if (await isSupported()) {
-      analytics = getAnalytics(app);
+if (!getApps().length) {
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
+    db = getFirestore(app);
+    storage = getStorage(app);
+    
+    if (typeof window !== 'undefined') {
+      const initAnalytics = async () => {
+        if (await isSupported()) {
+          analytics = getAnalytics(app);
+        }
+      };
+      initAnalytics();
     }
-  };
-  initAnalytics();
-} catch (error) {
-  if (error.code !== "app/duplicate-app") {
+  } catch (error) {
     console.error("Firebase initialization error:", error);
   }
+} else {
   app = getApp();
   auth = getAuth(app);
   db = getFirestore(app);
+  storage = getStorage(app);
 }
 
-// Utility functions for phone authentication
-const sendVerificationCode = async (phoneNumber, recaptchaVerifier) => {
+const sendVerificationCode = async (phoneNumber) => {
   try {
-    const phoneProvider = new PhoneAuthProvider(auth);
-    const verificationId = await phoneProvider.verifyPhoneNumber(
-      phoneNumber,
-      recaptchaVerifier
-    );
-    return verificationId;
+    if (!auth) {
+      throw new Error('Auth is not initialized');
+    }
+    
+    const provider = new PhoneAuthProvider(auth);
+    return new Promise((resolve, reject) => {
+      provider.verifyPhoneNumber(
+        phoneNumber,
+        60,
+        null,
+      ).then(resolve).catch(reject);
+    });
   } catch (error) {
     console.error("Error sending verification code:", error);
     throw error;
@@ -86,14 +92,60 @@ const isUserLoggedIn = () => {
   return auth.currentUser !== null;
 };
 
-const storage = getStorage(app);
+const getCurrentUser = () => {
+  return auth.currentUser;
+};
+
+const signOut = async () => {
+  try {
+    await auth.signOut();
+    return true;
+  } catch (error) {
+    console.error("Error signing out:", error);
+    throw error;
+  }
+};
+
+const updateUserProfile = async (updates) => {
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      await user.updateProfile(updates);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    throw error;
+  }
+};
+
+const sendEmailVerification = async () => {
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      await user.sendEmailVerification();
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error("Error sending email verification:", error);
+    throw error;
+  }
+};
 
 export {
   app,
   auth,
   db,
   storage,
+  analytics,
   sendVerificationCode,
   verifyCode,
-  isUserLoggedIn
+  isUserLoggedIn,
+  getCurrentUser,
+  signOut,
+  updateUserProfile,
+  sendEmailVerification,
+  firebaseConfig
 };

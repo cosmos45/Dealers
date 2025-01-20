@@ -1,71 +1,72 @@
-
-// app/(tabs)/settings.tsx
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Surface, TextInput, Button, Portal, Dialog } from 'react-native-paper';
-import { auth } from '../../firebaseConfig';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { Surface, TextInput, Button } from 'react-native-paper';
+import { auth, sendEmailVerification } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
 
 export default function Settings() {
   const router = useRouter();
-
+  const [loading, setLoading] = useState(true);
   const [userDetails, setUserDetails] = useState({
     name: '',
-    phone: '',
     email: '',
     businessName: '',
-    isEmailVerified: false,
-    isPhoneVerified: false
+    isEmailVerified: false
   });
-  const [showOtpDialog, setShowOtpDialog] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
 
   useEffect(() => {
-    const currentUser = auth?.currentUser;
-    if (currentUser) {
-      setUserDetails(prev => ({
-        ...prev,
-        email: currentUser.email || '',
-        isEmailVerified: currentUser.emailVerified || false,
-        name: currentUser.displayName || ''
-      }));
-    }
+    let isMounted = true;
+
+    const loadUserData = async () => {
+      try {
+        const currentUser = auth?.currentUser;
+        if (currentUser && isMounted) {
+          await currentUser.reload(); // Refresh user data
+          setUserDetails({
+            name: currentUser.displayName || '',
+            email: currentUser.email || '',
+            businessName: '',
+            isEmailVerified: currentUser.emailVerified || false
+          });
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadUserData();
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
   }, []);
+  
 
   const handleEmailVerification = async () => {
     try {
+      setLoading(true);
       const user = auth.currentUser;
-      if (user && !user.emailVerified) {
-        await user.sendEmailVerification();
-        alert('Verification email sent! Please check your inbox.');
+      if (!user) {
+        alert('No user is currently signed in');
+        return;
       }
+  
+      // Use the sendEmailVerification function from Firebase Auth
+      await sendEmailVerification(user);
+      alert('Verification email sent! Please check your inbox.');
     } catch (error) {
+      console.error('Email verification error:', error);
       alert('Error sending verification email');
+    } finally {
+      setLoading(false);
     }
   };
-
-  const handlePhoneVerification = async () => {
-    try {
-      if (!userDetails.phone) {
-        alert('Please enter a phone number');
-        return;
-      }
-
-      const phoneNumber = userDetails.phone.startsWith('+91') 
-        ? userDetails.phone 
-        : `+91${userDetails.phone}`;
-
-      if (!phoneNumber.match(/^\+91\d{10}$/)) {
-        alert('Please enter a valid 10-digit Indian phone number');
-        return;
-      }
-
-      // Initialize phone verification
-      setShowOtpDialog(true);
-    } catch (error) {
-      alert('Error sending verification code');
-    }
-  };
+  
 
   const handleLogout = async () => {
     try {
@@ -78,15 +79,44 @@ export default function Settings() {
 
   const handleUpdateProfile = async () => {
     try {
+      setLoading(true);
       const user = auth.currentUser;
-      if (user) {
-        // Update profile logic here
-        alert('Profile updated successfully');
+      if (!user) {
+        alert('No user is currently signed in');
+        return;
       }
+  
+      await user.updateProfile({
+        displayName: userDetails.name,
+        // Only update email if it's different
+        ...(user.email !== userDetails.email && { email: userDetails.email })
+      });
+  
+      // Refresh user data
+      setUserDetails(prev => ({
+        ...prev,
+        name: user.displayName || '',
+        email: user.email || '',
+        isEmailVerified: user.emailVerified
+      }));
+  
+      alert('Profile updated successfully');
     } catch (error) {
-      alert('Error updating profile');
+      console.error('Profile update error:', error);
+      alert(error.message || 'Error updating profile');
+    } finally {
+      setLoading(false);
     }
   };
+  
+
+  if (loading) {
+    return (
+      <Surface style={styles.container}>
+        <ActivityIndicator size="large" color="#007BFF" />
+      </Surface>
+    );
+  }
 
   return (
     <Surface style={styles.container}>
@@ -126,37 +156,6 @@ export default function Settings() {
           </Button>
         )}
 
-        <TextInput
-          label="Phone"
-          value={userDetails.phone}
-          onChangeText={(text) => setUserDetails(prev => ({
-            ...prev, 
-            phone: text.replace(/\D/g, '').slice(0, 10)
-          }))}
-          placeholder="Enter 10-digit mobile number"
-          mode="outlined"
-          style={styles.input}
-          keyboardType="phone-pad"
-          theme={{ colors: { primary: '#007BFF' }}}
-          right={
-            <TextInput.Icon 
-              icon={userDetails.isPhoneVerified ? "check-circle" : "alert-circle"}
-              color={userDetails.isPhoneVerified ? '#28a745' : '#dc3545'}
-            />
-          }
-        />
-
-        {!userDetails.isPhoneVerified && (
-          <Button 
-            mode="contained" 
-            onPress={handlePhoneVerification}
-            style={styles.verifyButton}
-            buttonColor="#007BFF"
-          >
-            Verify Phone
-          </Button>
-        )}
-
         <Button 
           mode="contained"
           onPress={handleUpdateProfile}
@@ -175,35 +174,6 @@ export default function Settings() {
       >
         Logout
       </Button>
-
-      <Portal>
-        <Dialog visible={showOtpDialog} onDismiss={() => setShowOtpDialog(false)}>
-          <Dialog.Title>Enter Verification Code</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              label="OTP Code"
-              value={otpCode}
-              onChangeText={setOtpCode}
-              keyboardType="number-pad"
-              mode="outlined"
-              theme={{ colors: { primary: '#007BFF' }}}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowOtpDialog(false)} textColor="#6c757d">
-              Cancel
-            </Button>
-            <Button 
-              onPress={() => {
-                setShowOtpDialog(false);
-              }} 
-              textColor="#007BFF"
-            >
-              Verify
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
     </Surface>
   );
 }

@@ -5,12 +5,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import firebaseConfig, { auth, db } from '../../firebaseConfig';
+import  { auth, db } from '../../firebaseConfig';
 import { inventoryService } from '../../services/inventoryService';
 import { dealService } from '../../services/dealService';
 import { initializeApp } from 'firebase/app';
 
-initializeApp(firebaseConfig);
 
 export default function HomeScreen() {
   const theme = useTheme();
