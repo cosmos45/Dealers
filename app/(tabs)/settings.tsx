@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Surface, TextInput, Button } from 'react-native-paper';
-import { auth, sendEmailVerification } from '../../firebaseConfig';
+import { auth } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
+import { sendEmailVerification } from 'firebase/auth';
 
 export default function Settings() {
   const router = useRouter();
@@ -45,6 +46,23 @@ export default function Settings() {
       isMounted = false;
     };
   }, []);
+  useEffect(() => {
+    const checkVerificationStatus = () => {
+      const user = auth.currentUser;
+      if (user) {
+        user.reload().then(() => {
+          setUserDetails(prev => ({
+            ...prev,
+            isEmailVerified: user.emailVerified
+          }));
+        });
+      }
+    };
+  
+    const interval = setInterval(checkVerificationStatus, 5000); // Check every 5 seconds
+  
+    return () => clearInterval(interval);
+  }, []);
   
 
   const handleEmailVerification = async () => {
@@ -56,16 +74,26 @@ export default function Settings() {
         return;
       }
   
-      // Use the sendEmailVerification function from Firebase Auth
+      if (user.emailVerified) {
+        alert('Email is already verified');
+        return;
+      }
+  
       await sendEmailVerification(user);
       alert('Verification email sent! Please check your inbox.');
     } catch (error) {
+      if (error.code === 'auth/too-many-requests') {
+        alert('Too many requests. Please try again later.');
+      } else {
+        alert('Error sending verification email: ' + error.message);
+      }
       console.error('Email verification error:', error);
-      alert('Error sending verification email');
     } finally {
       setLoading(false);
     }
   };
+  
+  
   
 
   const handleLogout = async () => {

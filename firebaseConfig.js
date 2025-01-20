@@ -5,7 +5,8 @@ import {
   getReactNativePersistence,
   PhoneAuthProvider,
   signInWithCredential,
-  getAuth
+  getAuth,
+  sendEmailVerification as firebaseSendEmailVerification 
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -120,19 +121,19 @@ const updateUserProfile = async (updates) => {
   }
 };
 
-const sendEmailVerification = async () => {
-  try {
-    const user = auth.currentUser;
-    if (user) {
-      await user.sendEmailVerification();
-      return true;
-    }
-    return false;
-  } catch (error) {
-    console.error("Error sending email verification:", error);
-    throw error;
-  }
-};
+// const sendEmailVerification = async () => {
+//   try {
+//     const user = auth.currentUser;
+//     if (user) {
+//       await firebaseSendEmailVerification(user);
+//       return true;
+//     }
+//     return false;
+//   } catch (error) {
+//     console.error("Error sending email verification:", error);
+//     throw error;
+//   }
+// };
 
 export {
   app,
@@ -146,6 +147,5 @@ export {
   getCurrentUser,
   signOut,
   updateUserProfile,
-  sendEmailVerification,
   firebaseConfig
 };
