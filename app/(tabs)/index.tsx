@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, FlatList, SafeAreaView, RefreshControl } from 'react-native';
+import { View, StyleSheet, FlatList, SafeAreaView, RefreshControl, TouchableOpacity } from 'react-native';
 import { Surface, Text, Card, Button, Avatar, useTheme, Provider as PaperProvider, ActivityIndicator, FAB } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -138,12 +138,14 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.container}>
         <Surface style={styles.header}>
           <Text style={styles.logo}>Dealers</Text>
-          <Avatar.Icon 
-            size={40} 
-            icon="account-circle"
-            style={styles.profileIcon}
-            onPress={() => router.push('/settings')}
-          />
+          <TouchableOpacity onPress={() => router.push('/(tabs)/settings')}>
+  <Avatar.Icon 
+    size={40} 
+    icon="account-circle"
+    style={styles.profileIcon}
+  />
+</TouchableOpacity>
+
         </Surface>
 
         <FlatList

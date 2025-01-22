@@ -1,26 +1,21 @@
 {
   "expo": {
-    "extra": {
-      "enableDebugLogging": true
-    },
-    "name": "--dealers",
-    "slug": "--dealers",
+    "scheme": "com.cosmos45.dealers",
+    "name": "Dealers",
+    "slug": "dealers",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "dealers",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Allow --dealers to access your photos and videos.",
-        "NSCameraUsageDescription": "Allow --dealers to access your camera",
-        "NSMicrophoneUsageDescription": "Allow --dealers to access your microphone"
-      },
-      "bundleIdentifier": "com.astle.dealers"
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
     },
     "android": {
+      "package": "com.cosmos45.dealers",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -31,34 +26,17 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
         "android.permission.INTERNET"
-      ],
-      "package": "com.astle.dealers",
-      "googleServicesFile": "./google-services.json"
+      ]
     },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+    "ios": {
+      "bundleIdentifier": "com.astle.dealers",
+      "supportsTablet": true
     },
     "plugins": [
       "@react-native-firebase/app",
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos and videos.",
-          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera"
-        }
-      ],
+      "expo-splash-screen",
+      "expo-image-picker",
       [
         "expo-build-properties",
         {
@@ -73,8 +51,10 @@
         }
       ]
     ],
-    "experiments": {
-      "typedRoutes": true
+    "extra": {
+      "eas": {
+        "projectId": "643240e2-1b56-4641-a860-023ed246e09d"
+      }
     }
   }
 }

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { TextInput, Button, Text, Surface, HelperText, Provider as PaperProvider, DefaultTheme } from 'react-native-paper';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../../firebaseConfig';
+import { signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
+import { auth, signInWithGoogle, useGoogleSignIn } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 
 const theme = {
   ...DefaultTheme,
@@ -19,6 +20,7 @@ const LoginScreen = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [identifierError, setIdentifierError] = useState('');
   const router = useRouter();
+  const { promptAsync } = useGoogleSignIn();
 
   const validateIdentifier = (text) => {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -26,19 +28,64 @@ const LoginScreen = () => {
     return emailPattern.test(text) || phonePattern.test(text);
   };
 
-  const handleLogin = async () => {
+  const handleForgotPassword = async () => {
     try {
-      if (!validateIdentifier(identifier)) {
-        setIdentifierError('Please enter a valid email or phone number');
+      if (!identifier) {
+        alert('Please enter your email address');
         return;
       }
       
-      const emailToUse = identifier.includes('@') 
-        ? identifier 
-        : `${identifier}@yourdomain.com`;
-        
-      await signInWithEmailAndPassword(auth, emailToUse, password);
+      if (!validateIdentifier(identifier)) {
+        setIdentifierError('Please enter a valid email address');
+        return;
+      }
+  
+      await sendPasswordResetEmail(auth, identifier);
+      alert('Password reset email sent. Please check your inbox.');
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        alert('No account found with this email address');
+      } else {
+        alert(error.message);
+      }
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      if (!validateIdentifier(identifier)) {
+        setIdentifierError('Please enter a valid email');
+        return;
+      }
+      
+      const userCredential = await signInWithEmailAndPassword(auth, identifier, password);
+      
+      if (!userCredential.user.emailVerified) {
+        await sendEmailVerification(userCredential.user);
+        alert('Please verify your email before logging in. A new verification email has been sent.');
+        await signOut(auth);
+        return;
+      }
+      
       router.replace('/(tabs)');
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        alert('No account found with this email');
+      } else if (error.code === 'auth/wrong-password') {
+        alert('Invalid password');
+      } else {
+        alert(error.message);
+      }
+    }
+  };
+  
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const result = await signInWithGoogle(promptAsync);
+      if (result?.user) {
+        router.replace('/(tabs)');
+      }
     } catch (error) {
       alert(error.message);
     }
@@ -95,6 +142,16 @@ const LoginScreen = () => {
           </Button>
 
           <Button 
+            mode="contained"
+            onPress={handleGoogleSignIn}
+            style={[styles.googleButton, { backgroundColor: '#DB4437' }]}
+            labelStyle={{ color: '#FFFFFF' }}
+            icon="google"
+          >
+            Continue with Google
+          </Button>
+
+          <Button 
             mode="outlined"
             onPress={() => router.push('/(auth)/register')}
             style={[styles.registerButton, { borderColor: '#007BFF' }]}
@@ -104,13 +161,13 @@ const LoginScreen = () => {
           </Button>
 
           <Button 
-            mode="text"
-            onPress={() => alert('Forgot Password?')}
-            style={styles.forgotButton}
-            labelStyle={{ color: '#6C757D' }}
-          >
-            Forgot Password?
-          </Button>
+  mode="text"
+  onPress={handleForgotPassword}
+  style={styles.forgotButton}
+  labelStyle={{ color: '#6C757D' }}
+>
+  Forgot Password?
+</Button>
         </View>
       </Surface>
     </PaperProvider>
@@ -145,6 +202,10 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     marginTop: 8,
+    marginBottom: 16,
+    paddingVertical: 6,
+  },
+  googleButton: {
     marginBottom: 16,
     paddingVertical: 6,
   },

@@ -3,7 +3,14 @@ import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Surface, TextInput, Button } from 'react-native-paper';
 import { auth } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
-import { sendEmailVerification } from 'firebase/auth';
+import { 
+  updateProfile, 
+  updateEmail, 
+  fetchSignInMethodsForEmail, 
+  sendEmailVerification 
+} from 'firebase/auth';
+
+
 
 export default function Settings() {
   const router = useRouter();
@@ -46,6 +53,7 @@ export default function Settings() {
       isMounted = false;
     };
   }, []);
+
   useEffect(() => {
     const checkVerificationStatus = () => {
       const user = auth.currentUser;
@@ -63,6 +71,26 @@ export default function Settings() {
   
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const checkEmailVerification = () => {
+      const user = auth.currentUser;
+      if (user) {
+        user.reload().then(() => {
+          if (user.emailVerified) {
+            setUserDetails(prev => ({
+              ...prev,
+              isEmailVerified: true
+            }));
+          }
+        });
+      }
+    };
+  
+    const interval = setInterval(checkEmailVerification, 5000);
+    return () => clearInterval(interval);
+  }, []);
+  
   
 
   const handleEmailVerification = async () => {
@@ -105,6 +133,8 @@ export default function Settings() {
     }
   };
 
+
+
   const handleUpdateProfile = async () => {
     try {
       setLoading(true);
@@ -114,13 +144,38 @@ export default function Settings() {
         return;
       }
   
-      await user.updateProfile({
-        displayName: userDetails.name,
-        // Only update email if it's different
-        ...(user.email !== userDetails.email && { email: userDetails.email })
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(userDetails.email)) {
+        alert('Please enter a valid email address');
+        return;
+      }
+  
+      // Check if email is being changed
+      if (user.email !== userDetails.email) {
+        // Check if new email already exists
+        const signInMethods = await fetchSignInMethodsForEmail(auth, userDetails.email);
+        if (signInMethods.length > 0) {
+          alert('This email is already in use by another account');
+          return;
+        }
+  
+        // Update email
+        await updateEmail(user, userDetails.email);
+        
+        // Send verification email to new email
+        await sendEmailVerification(user);
+        
+        alert('Verification email sent to your new email address. Please verify it.');
+      }
+  
+      // Update display name
+      await updateProfile(user, {
+        displayName: userDetails.name
       });
   
       // Refresh user data
+      await user.reload();
       setUserDetails(prev => ({
         ...prev,
         name: user.displayName || '',
@@ -131,23 +186,27 @@ export default function Settings() {
       alert('Profile updated successfully');
     } catch (error) {
       console.error('Profile update error:', error);
-      alert(error.message || 'Error updating profile');
+      if (error.code === 'auth/requires-recent-login') {
+        alert('For security reasons, please log out and log in again to change your email');
+      } else {
+        alert(error.message || 'Error updating profile');
+      }
     } finally {
       setLoading(false);
     }
   };
   
+  
 
-  if (loading) {
-    return (
-      <Surface style={styles.container}>
-        <ActivityIndicator size="large" color="#007BFF" />
-      </Surface>
-    );
-  }
+
 
   return (
     <Surface style={styles.container}>
+      {loading && (
+      <View style={styles.loadingOverlay}>
+        <ActivityIndicator size="large" color="#007BFF" />
+      </View>
+    )}
       <View style={styles.section}>
         <TextInput
           label="Business Name"
@@ -159,30 +218,30 @@ export default function Settings() {
         />
         
         <TextInput
-          label="Email"
-          value={userDetails.email}
-          onChangeText={(text) => setUserDetails(prev => ({...prev, email: text}))}
-          mode="outlined"
-          style={styles.input}
-          theme={{ colors: { primary: '#007BFF' }}}
-          right={
-            <TextInput.Icon 
-              icon={userDetails.isEmailVerified ? "check-circle" : "alert-circle"}
-              color={userDetails.isEmailVerified ? '#28a745' : '#dc3545'}
-            />
-          }
-        />
+  label="Email"
+  value={userDetails.email}
+  onChangeText={(text) => setUserDetails(prev => ({...prev, email: text}))}
+  mode="outlined"
+  style={styles.input}
+  theme={{ colors: { primary: '#007BFF' }}}
+  right={
+    <TextInput.Icon 
+      icon={userDetails.isEmailVerified ? "check-circle" : "alert-circle"}
+      color={userDetails.isEmailVerified ? '#28a745' : '#dc3545'}
+    />
+  }
+/>
         
-        {!userDetails.isEmailVerified && (
-          <Button 
-            mode="contained" 
-            onPress={handleEmailVerification}
-            style={styles.verifyButton}
-            buttonColor="#007BFF"
-          >
-            Verify Email
-          </Button>
-        )}
+{!userDetails.isEmailVerified && (
+  <Button 
+    mode="contained" 
+    onPress={handleEmailVerification}
+    style={styles.verifyButton}
+    buttonColor="#007BFF"
+  >
+    Verify Email
+  </Button>
+)}
 
         <Button 
           mode="contained"
@@ -211,6 +270,17 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     backgroundColor: '#ffffff'
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    zIndex: 1000
   },
   section: {
     gap: 16

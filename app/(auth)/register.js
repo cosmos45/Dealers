@@ -4,6 +4,7 @@ import { TextInput, Button, Text, Surface, HelperText, Provider as PaperProvider
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
+import { sendEmailVerification } from 'firebase/auth';
 
 const theme = {
   ...DefaultTheme,
@@ -44,24 +45,33 @@ const RegistrationScreen = () => {
   const handleRegister = async () => {
     try {
       if (!validateIdentifier(identifier)) {
-        setIdentifierError('Please enter a valid email or phone number');
+        setIdentifierError('Please enter a valid email');
         return;
       }
       
       if (!validatePasswords()) {
         return;
       }
-
-      const emailToUse = identifier.includes('@') 
-        ? identifier 
-        : `${identifier}@yourdomain.com`;
-        
-      await createUserWithEmailAndPassword(auth, emailToUse, password);
-      router.replace('/(tabs)');
+  
+      const userCredential = await createUserWithEmailAndPassword(auth, identifier, password);
+      
+      if (userCredential.user) {
+        await sendEmailVerification(userCredential.user);
+        alert('Registration successful! Please check your email for verification link.');
+        await signOut(auth);
+        router.push('/(auth)/login');
+      }
     } catch (error) {
-      alert(error.message);
+      if (error.code === 'auth/email-already-in-use') {
+        alert('This email is already registered');
+      } else {
+        alert(error.message);
+      }
     }
   };
+  
+
+  
 
   return (
     <PaperProvider theme={theme}>

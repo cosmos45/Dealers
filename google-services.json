@@ -1,0 +1,47 @@
+{
+    "project_info": {
+      "project_number": "744120809079",
+      "project_id": "dealers-f018b",
+      "storage_bucket": "dealers-f018b.firebasestorage.app"
+    },
+    "client": [
+      {
+        "client_info": {
+          "mobilesdk_app_id": "1:744120809079:android:9872c41153403dbb357872",
+          "android_client_info": {
+            "package_name": "com.cosmos45.dealers"
+          }
+        },
+        "oauth_client": [
+          {
+            "client_id": "744120809079-js49q528de9cdb573njbsfdfep2f9ak9.apps.googleusercontent.com",
+            "client_type": 1,
+            "android_info": {
+              "package_name": "com.cosmos45.dealers",
+              "certificate_hash": "9b39e0e1769da9a7aaff70acd346ecfe973cb366"
+            }
+          },
+          {
+            "client_id": "744120809079-3fg0h0qt64gjehfein9sfqni29675vij.apps.googleusercontent.com",
+            "client_type": 3
+          }
+        ],
+        "api_key": [
+          {
+            "current_key": "AIzaSyA0fuYBqpJ9GXl5STrqcdAhQ40QCFx6W-w"
+          }
+        ],
+        "services": {
+          "appinvite_service": {
+            "other_platform_oauth_client": [
+              {
+                "client_id": "744120809079-3fg0h0qt64gjehfein9sfqni29675vij.apps.googleusercontent.com",
+                "client_type": 3
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "configuration_version": "1"
+  }
