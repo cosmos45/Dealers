@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Surface, TextInput, Button } from 'react-native-paper';
-import { auth } from '../../firebaseConfig';
+import { auth, db } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
 import { 
   updateProfile, 
@@ -9,6 +9,7 @@ import {
   fetchSignInMethodsForEmail, 
   sendEmailVerification 
 } from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 
 
@@ -18,10 +19,12 @@ export default function Settings() {
   const [userDetails, setUserDetails] = useState({
     name: '',
     email: '',
+    firstName: '',
+    lastName: '',
     businessName: '',
     isEmailVerified: false
   });
-
+  
   useEffect(() => {
     let isMounted = true;
 
@@ -29,11 +32,18 @@ export default function Settings() {
       try {
         const currentUser = auth?.currentUser;
         if (currentUser && isMounted) {
-          await currentUser.reload(); // Refresh user data
+          await currentUser.reload();
+          
+          // Fetch additional user data from Firestore
+          const userDoc = await getDoc(doc(db, 'dealers', currentUser.uid));
+          const userData = userDoc.data();
+    
           setUserDetails({
             name: currentUser.displayName || '',
             email: currentUser.email || '',
-            businessName: '',
+            firstName: userData?.firstName || '',
+            lastName: userData?.lastName || '',
+            businessName: userData?.businessName || '',
             isEmailVerified: currentUser.emailVerified || false
           });
         }
@@ -45,6 +55,7 @@ export default function Settings() {
         }
       }
     };
+    
 
     loadUserData();
 
@@ -153,26 +164,29 @@ export default function Settings() {
   
       // Check if email is being changed
       if (user.email !== userDetails.email) {
-        // Check if new email already exists
         const signInMethods = await fetchSignInMethodsForEmail(auth, userDetails.email);
         if (signInMethods.length > 0) {
           alert('This email is already in use by another account');
           return;
         }
   
-        // Update email
         await updateEmail(user, userDetails.email);
-        
-        // Send verification email to new email
         await sendEmailVerification(user);
-        
         alert('Verification email sent to your new email address. Please verify it.');
       }
   
-      // Update display name
+      // Update display name in Authentication
       await updateProfile(user, {
-        displayName: userDetails.name
+        displayName: `${userDetails.firstName} ${userDetails.lastName}`
       });
+  
+      // Update user data in Firestore
+      await setDoc(doc(db, 'dealers', user.uid), {
+        firstName: userDetails.firstName,
+        lastName: userDetails.lastName,
+        businessName: userDetails.businessName,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
   
       // Refresh user data
       await user.reload();
@@ -197,6 +211,7 @@ export default function Settings() {
   };
   
   
+  
 
 
 
@@ -208,14 +223,33 @@ export default function Settings() {
       </View>
     )}
       <View style={styles.section}>
-        <TextInput
-          label="Business Name"
-          value={userDetails.businessName}
-          onChangeText={(text) => setUserDetails(prev => ({...prev, businessName: text}))}
-          mode="outlined"
-          style={styles.input}
-          theme={{ colors: { primary: '#007BFF' }}}
-        />
+      <TextInput
+  label="First Name"
+  value={userDetails.firstName}
+  onChangeText={(text) => setUserDetails(prev => ({...prev, firstName: text}))}
+  mode="outlined"
+  style={styles.input}
+  theme={{ colors: { primary: '#007BFF' }}}
+/>
+
+<TextInput
+  label="Last Name"
+  value={userDetails.lastName}
+  onChangeText={(text) => setUserDetails(prev => ({...prev, lastName: text}))}
+  mode="outlined"
+  style={styles.input}
+  theme={{ colors: { primary: '#007BFF' }}}
+/>
+
+<TextInput
+  label="Business Name"
+  value={userDetails.businessName}
+  onChangeText={(text) => setUserDetails(prev => ({...prev, businessName: text}))}
+  mode="outlined"
+  style={styles.input}
+  theme={{ colors: { primary: '#007BFF' }}}
+/>
+
         
         <TextInput
   label="Email"

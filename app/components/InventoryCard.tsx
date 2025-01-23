@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, Image } from 'react-native';
-import { Card, Text, Chip, IconButton } from 'react-native-paper';
+import { Card, Text, Chip, IconButton, Switch } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { InventoryItem } from '../../services/inventoryService';
+import { InventoryItem, inventoryService } from '../../services/inventoryService';
 
 interface Props {
   item: InventoryItem;
@@ -12,6 +12,7 @@ interface Props {
 
 export default function InventoryCard({ item, onEdit, onDelete }: Props) {
   const router = useRouter();
+  const [isPublic, setIsPublic] = useState(item.isPublic || false);
 
   const handleCardPress = () => {
     router.push({
@@ -20,6 +21,19 @@ export default function InventoryCard({ item, onEdit, onDelete }: Props) {
     });
   };
 
+
+  const handleTogglePublic = async () => {
+    try {
+      await inventoryService.updateDevice(item.id!, {
+        isPublic: !isPublic,
+        updatedAt: new Date()
+      });
+      setIsPublic(!isPublic);
+    } catch (error) {
+      console.error('Error updating public status:', error);
+    }
+  };
+  
   return (
     <Card style={styles.card} onPress={handleCardPress}>
       <View style={styles.cardContainer}>
@@ -40,6 +54,13 @@ export default function InventoryCard({ item, onEdit, onDelete }: Props) {
         <Card.Content style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.brandModel}>{`${item.brand} ${item.model}`}</Text>
+            <Switch
+              value={isPublic}
+              onValueChange={handleTogglePublic}
+              color="#007BFF"
+              style={styles.marketplaceSwitch}
+              disabled={false}
+            />
           </View>
           
           <View style={styles.specs}>
@@ -80,7 +101,13 @@ export default function InventoryCard({ item, onEdit, onDelete }: Props) {
   );
 }
 
+
 const styles = StyleSheet.create({
+  marketplaceSwitch: {
+    position: 'absolute',
+    right: 0,
+    top: -5,
+  },
   card: {
     marginBottom: 8,
     elevation: 2,

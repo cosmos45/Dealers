@@ -5,7 +5,7 @@ import {
   Provider, Switch, IconButton
 } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { inventoryService } from '../../services/inventoryService';
+import { InventoryItem, inventoryService } from '../../services/inventoryService';
 import { auth } from '../../firebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
 import { storageService } from '../../services/storageService';
@@ -20,6 +20,12 @@ const CONDITIONS = [
   { label: 'Refurbished (Certified)', value: 'refurbished' },
   { label: 'For Parts Only', value: 'parts' }
 ];
+
+
+interface PhoneData extends InventoryItem {
+  id: string;
+}
+
 
 export default function AddEditPhoneScreen() {
   const router = useRouter();
@@ -37,6 +43,13 @@ export default function AddEditPhoneScreen() {
   const [loading, setLoading] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isPublic, setIsPublic] = useState(() => {
+    if (!phoneData) return false;
+    const parsedData = typeof phoneData === 'string' 
+      ? JSON.parse(phoneData)
+      : phoneData;
+    return parsedData?.isPublic || false;
+  });
 
   useEffect(() => {
     if (isIphone) {
@@ -64,6 +77,7 @@ export default function AddEditPhoneScreen() {
         setQuantity(parsedData.quantity?.toString() || '1');
         setIsIphone(parsedData.isIphone || false);
         setImages(parsedData.images || []);
+        setIsPublic(parsedData.isPublic || false);  // Add this line
         
       } catch (error) {
         console.error('Error parsing phone data:', error);
@@ -115,44 +129,46 @@ export default function AddEditPhoneScreen() {
       alert('Please fill in all required fields');
       return;
     }
-  
+
     try {
       setLoading(true);
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user found');
-  
+
       if (isEdit) {
-        const phone = JSON.parse(phoneData);
+        const phone = JSON.parse(phoneData as string) as PhoneData;
         const oldImages = phone?.images || [];
         const newImageSet = new Set(images);
         const imagesToDelete = oldImages.filter(img => !newImageSet.has(img));
         await storageService.deleteMultipleMedia(imagesToDelete);
       }
-  
-      const deviceData = {
+
+      const deviceData: Omit<InventoryItem, 'id'> = {
         brand,
         model,
         storageGB: parseInt(storageGB),
-        ramGB: isIphone ? null : parseInt(ramGB),
+        ramGB: isIphone ? 0 : (parseInt(ramGB) || 0), // Fix here
         condition,
         quantity: parseInt(quantity),
         basePrice: parseFloat(basePrice),
         isIphone,
         images,
         dealerId: currentUser.uid,
+        dealerName: currentUser.displayName || 'Unknown Dealer',
         updatedAt: new Date(),
-        status: 'available'
+        status: 'available',
+        isPublic: isPublic || false,
+        createdAt: new Date()
       };
-  
+
+
       if (isEdit) {
-        const phone = JSON.parse(phoneData);
-        const phoneId = phone?.id;
-        await inventoryService.updateDevice(phoneId, deviceData);
+        const phone = JSON.parse(phoneData as string) as PhoneData;
+        await inventoryService.updateDevice(phone.id, deviceData);
       } else {
-        const docRef = await inventoryService.addDevice(deviceData);
-        console.log('New device added with ID:', docRef.id);
+        await inventoryService.addDevice(deviceData);
       }
-  
+
       router.back();
     } catch (error) {
       console.error('Error saving device:', error);
@@ -161,6 +177,7 @@ export default function AddEditPhoneScreen() {
       setLoading(false);
     }
   };
+  
 
 
   return (
@@ -204,6 +221,15 @@ export default function AddEditPhoneScreen() {
   activeOutlineColor="#007BFF"/>
           <TextInput label="Quantity in Stock *" value={quantity} onChangeText={setQuantity} mode="outlined" keyboardType="numeric" style={styles.input}   outlineColor="#E0E0E0"
   activeOutlineColor="#007BFF" />
+
+<View style={styles.switchContainer}>
+  <Text style={styles.switchLabel}>List in Marketplace</Text>
+  <Switch 
+    value={isPublic} 
+    onValueChange={setIsPublic} 
+    color="#007BFF" 
+  />
+</View>
 
           {/* Image Section */}
           <View style={styles.imageSection}>

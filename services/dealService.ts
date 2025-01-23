@@ -258,36 +258,35 @@ export const dealService = {
 ,
   
 
-  async getRecentSales(model: string): Promise<SaleHistory[]> {
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('No authenticated user found');
+async getRecentSales(model: string): Promise<SaleHistory[]> {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('No authenticated user found');
 
-      const q = query(
-        collection(db, 'soldPhones'),
-        where('dealerId', '==', currentUser.uid),
-        where('model', '==', model),
-        orderBy('soldAt', 'desc'),
-        limit(5)
-      );
+    const q = query(
+      collection(db, 'soldPhones'),
+      where('dealerId', '==', currentUser.uid),
+      where('model', '==', model),
+      where('dealType', '==', 'wholesale'),
+      orderBy('soldAt', 'desc'),
+      limit(5)
+    );
 
-      const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          date: data.soldAt,
-          price: data.price,
-          model: data.model,
-          dealType: data.dealType,
-          condition: data.condition
-        };
-      });
-    } catch (error) {
-      console.error('Error getting recent sales:', error);
-      throw error;
-    }
-  },
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      date: doc.data().soldAt,
+      price: doc.data().price,
+      model: doc.data().model,
+      dealType: doc.data().dealType,
+      condition: doc.data().condition
+    }));
+  } catch (error) {
+    console.error('Error getting recent sales:', error);
+    throw error;
+  }
+}
+,
 
   async getMarketInsights(model: string): Promise<MarketInsights> {
     try {

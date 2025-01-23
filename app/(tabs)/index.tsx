@@ -21,6 +21,7 @@ export default function HomeScreen() {
     soldDevices: 0,
     lowStock: 0
   });
+  
   const [recentDeals, setRecentDeals] = useState([]);
   const [dealStats, setDealStats] = useState({
     totalDeals: 0,

@@ -6,13 +6,17 @@ import { useRouter } from 'expo-router';
 export default function DealsList({ deals }) {
   const router = useRouter();
   const [page, setPage] = useState(0); // Current page
-  const itemsPerPage = 10; // Number of deals per page
+  const itemsPerPage = 5; // Number of deals per page
 
-  // Paginate deals
-  const paginatedDeals = deals.slice(
+  const sortedDeals = [...deals].sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  const paginatedDeals = sortedDeals.slice(
     page * itemsPerPage,
     (page + 1) * itemsPerPage
   );
+
 
   if (!deals || deals.length === 0) {
     return (
@@ -41,13 +45,13 @@ export default function DealsList({ deals }) {
           </DataTable.Title>
         </DataTable.Header>
 
-        {/* Table Rows */}
-        {paginatedDeals.map((deal, index) => (
-          <DataTable.Row
-          key={deal.id}
-          onPress={() => router.push(`/(tabs)/deals/${deal.id}`)}
-          style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}
-        >
+       {/* Table Rows */}
+{paginatedDeals.map((deal, index) => (
+  <DataTable.Row
+    key={deal.id}
+    onPress={() => router.push(`/(tabs)/deals/${deal.id}`)}
+    style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}
+  >
             <DataTable.Cell style={styles.dateColumn}>
               <Text style={styles.cellText}>
                 {new Date(deal.date).toLocaleDateString()}
@@ -81,16 +85,18 @@ export default function DealsList({ deals }) {
         ))}
       </DataTable>
 
-      {/* Pagination */}
+      {/* /* Pagination */}
       <DataTable.Pagination
-        page={page}
-        numberOfPages={Math.ceil(deals.length / itemsPerPage)}
-        onPageChange={(newPage) => setPage(newPage)}
-        label={`${page * itemsPerPage + 1}-${Math.min(
-          (page + 1) * itemsPerPage,
-          deals.length
-        )} of ${deals.length}`}
-      />
+  page={page}
+  numberOfPages={Math.ceil(deals.length / itemsPerPage)}
+  onPageChange={setPage}
+  label={`${page * itemsPerPage + 1}-${Math.min((page + 1) * itemsPerPage, deals.length)} of ${deals.length}`}
+  showFastPaginationControls
+  numberOfItemsPerPage={itemsPerPage}
+  selectPageDropdownLabel={'Rows per page'}
+  style={styles.pagination}
+/>
+
     </Surface>
   );
 }
@@ -170,7 +176,10 @@ const styles = StyleSheet.create({
     flex: 5, // Adjust column width to shift left slightly
     justifyContent: 'flex-start',
     paddingHorizontal: 1,
-    
-   
   },
+  pagination: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+  }
 });

@@ -1,4 +1,4 @@
-import { collection, addDoc, query, getDocs, where, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, addDoc, query, getDocs, where, orderBy, onSnapshot, doc, updateDoc, deleteDoc, limit, writeBatch, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import { storageService } from './storageService';
 
@@ -12,9 +12,11 @@ export interface InventoryItem {
   quantity: number;
   basePrice: number;
   dealerId: string;
+  dealerName?: string;
   isIphone: boolean;
   status: 'available' | 'sold';
   images?: string[];
+  isPublic?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,8 +32,170 @@ export interface SoldPhone {
   dealType: string;
   soldAt: string;
 }
+export interface DealerData {
+  id: string;
+  name: string;
+  location: string;
+  phone?: string;
+}
 
 export const inventoryService = {
+
+  async makeAllInventoryPublic() {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('No authenticated user found');
+  
+      const q = query(
+        collection(db, 'inventory'),
+        where('dealerId', '==', currentUser.uid),
+        where('status', '==', 'available')
+      );
+  
+      const snapshot = await getDocs(q);
+      const batch = writeBatch(db);
+  
+      snapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          isPublic: true,
+          updatedAt: new Date()
+        });
+      });
+  
+      await batch.commit();
+    } catch (error) {
+      console.error('Error making inventory public:', error);
+      throw error;
+    }
+  }
+,
+async createOrUpdateDealerProfile() {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('No authenticated user found');
+
+    const dealerRef = doc(db, 'dealers', currentUser.uid);
+    await setDoc(dealerRef, {
+      name: currentUser.displayName || 'Unknown Dealer',
+      email: currentUser.email,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      location: 'Update your location' // You can update this later
+    }, { merge: true });
+  } catch (error) {
+    console.error('Error creating/updating dealer profile:', error);
+    throw error;
+  }
+},  
+
+  async makeItemPublic(itemId: string, isPublic: boolean) {
+    try {
+      const docRef = doc(db, 'inventory', itemId);
+      await updateDoc(docRef, {
+        isPublic,
+        updatedAt: new Date()
+      });
+    } catch (error) {
+      console.error('Error updating item visibility:', error);
+      throw error;
+    }
+  },
+  // Add to inventoryService.ts
+async createDealerProfile(userId: string, dealerData: {
+  name: string;
+  location: string;
+  phone?: string;
+}) {
+  try {
+    await setDoc(doc(db, 'dealers', userId), {
+      ...dealerData,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  } catch (error) {
+    console.error('Error creating dealer profile:', error);
+    throw error;
+  }
+}
+,
+
+async getPublicInventory() {
+  try {
+    const q = query(
+      collection(db, 'inventory'),
+      where('isPublic', '==', true),
+      where('status', '==', 'available'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const snapshot = await getDocs(q);
+    const items: InventoryItem[] = [];
+    const dealersMap = new Map<string, {
+      id: string;
+      name: string;
+      location: string;
+      inventoryCount: number;
+    }>();
+
+    for (const docSnapshot of snapshot.docs) {
+      const itemData = docSnapshot.data() as InventoryItem;
+      const item = { id: docSnapshot.id, ...itemData };
+      items.push(item);
+      
+      if (!dealersMap.has(itemData.dealerId)) {
+        const dealerRef = doc(db, 'dealers', itemData.dealerId);
+        const dealerSnap = await getDoc(dealerRef);
+        
+        if (dealerSnap.exists()) {
+          const dealerData = dealerSnap.data();
+          dealersMap.set(itemData.dealerId, {
+            id: itemData.dealerId,
+            name: dealerData.name || 'Unknown Dealer',
+            location: dealerData.location || 'Unknown Location',
+            inventoryCount: 1
+          });
+        }
+      } else {
+        const dealer = dealersMap.get(itemData.dealerId);
+        if (dealer) {
+          dealer.inventoryCount++;
+        }
+      }
+    }
+
+    return {
+      items,
+      dealers: Array.from(dealersMap.values())
+    };
+  } catch (error) {
+    console.error('Error getting public inventory:', error);
+    throw error;
+  }
+}
+
+,
+
+async getDealerInventory(dealerId: string) {
+  try {
+    const q = query(
+      collection(db, 'inventory'),
+      where('dealerId', '==', dealerId),
+      where('isPublic', '==', true),
+      where('status', '==', 'available')
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting dealer inventory:', error);
+    throw error;
+  }
+}
+
+,
   async getSoldDevicesWithDetails(): Promise<SoldPhone[]> {
     try {
       const currentUser = auth.currentUser;
@@ -77,15 +241,16 @@ export const inventoryService = {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('No authenticated user found');
-
+  
       const device = {
         ...deviceData,
         status: 'available',
         dealerId: currentUser.uid,
+        isPublic: deviceData.isPublic || false, // Add this line
         createdAt: new Date(),
         updatedAt: new Date()
       };
-
+  
       const docRef = await addDoc(collection(db, 'inventory'), device);
       return docRef.id;
     } catch (error) {
@@ -93,6 +258,7 @@ export const inventoryService = {
       throw error;
     }
   },
+  
 
   subscribeToInventory(onUpdate: (items: InventoryItem[]) => void) {
     const currentUser = auth.currentUser;

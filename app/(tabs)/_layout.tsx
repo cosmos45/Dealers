@@ -4,14 +4,22 @@ import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { auth } from '../../firebaseConfig';
 import { IconButton } from 'react-native-paper';
+import { inventoryService } from '../../services/inventoryService';
 
 export default function TabLayout() {
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (!user) {
         router.replace('/(auth)/login');
+      } else {
+        try {
+          await inventoryService.createOrUpdateDealerProfile();
+          await inventoryService.makeAllInventoryPublic();
+        } catch (error) {
+          console.error('Error initializing marketplace:', error);
+        }
       }
     });
 
@@ -64,6 +72,15 @@ export default function TabLayout() {
           title: 'Deals',
           tabBarIcon: ({ color }) => (
             <MaterialCommunityIcons name="handshake" size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="marketplace/index"
+        options={{
+          title: 'Marketplace',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="storefront" size={24} color={color} />
           ),
         }}
       />
