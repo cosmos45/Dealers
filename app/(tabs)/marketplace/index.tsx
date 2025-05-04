@@ -1,5 +1,4 @@
 // app/(tabs)/marketplace/index.tsx
-// app/(tabs)/marketplace/index.tsx
 import React, { useState, useEffect } from 'react';
 import { View, FlatList, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { ActivityIndicator, Searchbar, SegmentedButtons, Chip, Portal, Modal, Text, Button, useTheme } from 'react-native-paper';

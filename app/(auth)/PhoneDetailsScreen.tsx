@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Image, Dimensions, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
 import {
   Appbar,
   Text,
@@ -10,12 +10,12 @@ import {
 } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { inventoryService, SoldPhone, InventoryItem } from '../../services/inventoryService';
-import ImageView from 'react-native-image-viewing';
 import * as FileSystem from 'expo-file-system';
-import { auth, storage } from '../../firebaseConfig';
-import { getAuth } from 'firebase/auth';
+import { auth } from '../../firebaseConfig';
+import { Image } from 'expo-image';
 
 const { width } = Dimensions.get('window');
+
 
 interface PhoneDetails {
   id?: string;
@@ -285,37 +285,19 @@ export default function PhoneDetailsScreen() {
                     onPress={() => handleImagePress(index)}
                   >
                     <Image
-  source={{ 
-    uri: imageCache[uri] || uri,
-    headers: { 
-      Accept: 'image/*',
-      'Cache-Control': 'no-cache',
-      Authorization: `Bearer ${auth.currentUser?.getIdToken()}`
-    }
-  }}
-  defaultSource={require('../../assets/images/icon.png')}
-  style={styles.carouselImage}
-  resizeMode="cover"
-  onError={(e) => {
-    handleImageError(e.nativeEvent.error);
-    setImageLoadErrors(prev => ({
-      ...prev,
-      [uri]: true
-    }));
-  }}
-  onLoadStart={() => {
-    console.log('Starting to load image:', uri);
-  }}
-  onLoad={() => {
-    console.log('Image loaded successfully:', uri);
-    setImageLoadErrors(prev => ({
-      ...prev,
-      [uri]: false
-    }));
-  }}
-/>
-
-
+                      source={{ uri: imageCache[uri] || uri }}
+                      style={styles.carouselImage}
+                      contentFit="cover"
+                      transition={300}
+                      placeholder={require('../../assets/images/icon.png')}
+                      onError={(e) => {
+                        console.error('Image loading error:', e);
+                        setImageLoadErrors(prev => ({
+                          ...prev,
+                          [uri]: true
+                        }));
+                      }}
+                    />
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -480,14 +462,21 @@ export default function PhoneDetailsScreen() {
 </Card>
 </ScrollView>
 
-<ImageView
-        images={phoneDetails?.images?.map(uri => ({ uri })) || []}
-        imageIndex={selectedImageIndex}
-        visible={imageViewerVisible}
-        onRequestClose={() => setImageViewerVisible(false)}
-        swipeToCloseEnabled={true}
-        doubleTapToZoomEnabled={true}
-      />
+{imageViewerVisible && (
+        <View style={styles.imageViewerContainer}>
+          <TouchableOpacity
+            style={styles.imageViewerCloseButton}
+            onPress={() => setImageViewerVisible(false)}
+          >
+            <Text style={styles.imageViewerCloseButtonText}>Close</Text>
+          </TouchableOpacity>
+          <Image
+            source={{ uri: phoneDetails.images?.[selectedImageIndex] }}
+            style={styles.fullScreenImage}
+            contentFit="contain"
+          />
+        </View>
+      )}
 
       {isChangingDevice && (
         <View style={styles.loadingOverlay}>
@@ -503,6 +492,12 @@ export default function PhoneDetailsScreen() {
 
 
 const styles = StyleSheet.create({
+
+
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF'
@@ -687,14 +682,25 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   imageViewerContainer: {
-    flex: 1,
-    backgroundColor: '#000'
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'black',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageViewerCloseButtonText: {
+    color: 'white',
+    fontSize: 18,
   },
   imageViewerCloseButton: {
     position: 'absolute',
     top: 40,
     right: 20,
-    zIndex: 1
+    zIndex: 1,
+    padding: 10,
   },
   imageViewerIndicator: {
     position: 'absolute',
